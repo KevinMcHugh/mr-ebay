@@ -18,14 +18,15 @@ import (
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	"github.com/KevinMcHugh/mr-ebay/internal/server"
 	"github.com/KevinMcHugh/mr-ebay/internal/server/me"
-	"github.com/KevinMcHugh/mr-ebay/internal/server/notes"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/searches"
 )
 
 // Instructions is sent to every client on connect. Tell the model what the
 // app is for and the usual order of tools; keep it short.
-const Instructions = `This server stores notes: a title and a free-text body.
+const Instructions = `Mr. eBay keeps the user's saved eBay searches: what they are shopping for, as eBay filters plus a free-text "wants" describing what a filter cannot (fit, flaws to avoid, sellers to trust).
 
-Use list_notes to see what exists and get_note for one in full. create_note, update_note and delete_note change them. Confirm with the user before deleting anything.`
+Use list_searches to see what they are after and get_search for one in full. create_search saves a new one; it does not run it. update_search changes a search, and delete_search removes it (confirm with the user first).
+Prices are integer cents of the search's currency (USD unless set), and 0 means no limit. Set watch only when the user wants to hear about new matches without asking.`
 
 // NewServer builds the MCP server with every tool registered.
 func NewServer(store server.Store, links app.Links) *mcpsdk.Server {
@@ -44,27 +45,47 @@ type MeOutput struct {
 	Me me.Me `json:"me"`
 }
 
-type ListNotesOutput struct {
-	Notes []notes.Note `json:"notes"`
+type ListSearchesOutput struct {
+	Searches []searches.Search `json:"searches"`
 }
 
-type NoteIDInput struct {
-	ID string `json:"id" jsonschema:"note id"`
+type SearchIDInput struct {
+	ID string `json:"id" jsonschema:"search id"`
 }
 
-type NoteOutput struct {
-	Note notes.Note `json:"note"`
+type SearchOutput struct {
+	Search searches.Search `json:"search"`
 }
 
-type CreateNoteInput struct {
-	Title string `json:"title" jsonschema:"a short title, up to 200 characters"`
-	Body  string `json:"body,omitempty" jsonschema:"the note's text, up to 20000 characters"`
+type CreateSearchInput struct {
+	Name            string   `json:"name" jsonschema:"a short name for what is wanted, e.g. rain shell size M"`
+	Query           string   `json:"query" jsonschema:"eBay keywords"`
+	CategoryIDs     []string `json:"categoryIds,omitempty" jsonschema:"eBay category ids to search within"`
+	Conditions      []string `json:"conditions,omitempty" jsonschema:"any of NEW, USED, UNSPECIFIED; omit for any condition"`
+	BuyingOptions   []string `json:"buyingOptions,omitempty" jsonschema:"any of FIXED_PRICE, AUCTION, BEST_OFFER; omit for any"`
+	MinPriceCents   int64    `json:"minPriceCents,omitempty" jsonschema:"lowest price in cents; 0 or omitted for none"`
+	MaxPriceCents   int64    `json:"maxPriceCents,omitempty" jsonschema:"highest price in cents; 0 or omitted for none"`
+	Currency        string   `json:"currency,omitempty" jsonschema:"three-letter currency code, default USD"`
+	Marketplace     string   `json:"marketplace,omitempty" jsonschema:"eBay marketplace id, default EBAY_US"`
+	Wants           string   `json:"wants,omitempty" jsonschema:"what the user is after in their own words: size, fit, must-haves, deal-breakers"`
+	Watch           bool     `json:"watch,omitempty" jsonschema:"check it unattended and alert on new matches"`
+	AlertBelowCents int64    `json:"alertBelowCents,omitempty" jsonschema:"for a watched search, alert only on matches at or below this total in cents; 0 alerts on every new match"`
 }
 
-type UpdateNoteInput struct {
-	ID    string  `json:"id" jsonschema:"note id"`
-	Title *string `json:"title,omitempty" jsonschema:"new title; omit to keep it"`
-	Body  *string `json:"body,omitempty" jsonschema:"new body; omit to keep it"`
+type UpdateSearchInput struct {
+	ID              string    `json:"id" jsonschema:"search id"`
+	Name            *string   `json:"name,omitempty" jsonschema:"new name; omit to keep"`
+	Query           *string   `json:"query,omitempty" jsonschema:"new keywords; omit to keep"`
+	CategoryIDs     *[]string `json:"categoryIds,omitempty" jsonschema:"replacement category ids; omit to keep"`
+	Conditions      *[]string `json:"conditions,omitempty" jsonschema:"replacement conditions; [] for any; omit to keep"`
+	BuyingOptions   *[]string `json:"buyingOptions,omitempty" jsonschema:"replacement buying options; [] for any; omit to keep"`
+	MinPriceCents   *int64    `json:"minPriceCents,omitempty" jsonschema:"new minimum in cents; 0 removes it; omit to keep"`
+	MaxPriceCents   *int64    `json:"maxPriceCents,omitempty" jsonschema:"new maximum in cents; 0 removes it; omit to keep"`
+	Currency        *string   `json:"currency,omitempty" jsonschema:"omit to keep"`
+	Marketplace     *string   `json:"marketplace,omitempty" jsonschema:"omit to keep"`
+	Wants           *string   `json:"wants,omitempty" jsonschema:"replacement wants; omit to keep"`
+	Watch           *bool     `json:"watch,omitempty" jsonschema:"turn unattended watching on or off; omit to keep"`
+	AlertBelowCents *int64    `json:"alertBelowCents,omitempty" jsonschema:"new alert threshold in cents; 0 alerts on every new match; omit to keep"`
 }
 
 type OKOutput struct {
@@ -83,49 +104,59 @@ func registerRead(s *mcpsdk.Server, store server.Store, links app.Links) {
 	})
 
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
-		Name:        "list_notes",
-		Description: "List every note, newest first.",
-	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ Empty) (*mcpsdk.CallToolResult, ListNotesOutput, error) {
-		vm, err := server.BuildViewModel(ctx, notes.ListEndpoint{Store: store, Links: links}, apigen.ListNotesRequestObject{})
-		return nil, ListNotesOutput{Notes: vm}, err
+		Name:        "list_searches",
+		Description: "List the user's saved eBay searches, newest first, with how many matches they have not looked at yet.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ Empty) (*mcpsdk.CallToolResult, ListSearchesOutput, error) {
+		vm, err := server.BuildViewModel(ctx, searches.ListEndpoint{Store: store, Links: links}, apigen.ListSearchesRequestObject{})
+		return nil, ListSearchesOutput{Searches: vm}, err
 	})
 
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
-		Name:        "get_note",
-		Description: "One note in full.",
-	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in NoteIDInput) (*mcpsdk.CallToolResult, NoteOutput, error) {
-		vm, err := server.BuildViewModel(ctx, notes.GetEndpoint{Store: store, Links: links}, apigen.GetNoteRequestObject{NoteId: in.ID})
-		return nil, NoteOutput{Note: vm}, err
+		Name:        "get_search",
+		Description: "One saved search in full, including the user's wants in their own words.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SearchIDInput) (*mcpsdk.CallToolResult, SearchOutput, error) {
+		vm, err := server.BuildViewModel(ctx, searches.GetEndpoint{Store: store, Links: links}, apigen.GetSearchRequestObject{SearchId: in.ID})
+		return nil, SearchOutput{Search: vm}, err
 	})
 }
 
 func registerWrite(s *mcpsdk.Server, store server.Store, links app.Links) {
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
-		Name:        "create_note",
-		Description: "Save a new note.",
-	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateNoteInput) (*mcpsdk.CallToolResult, NoteOutput, error) {
-		vm, err := server.BuildViewModel(ctx, notes.CreateEndpoint{Store: store, Links: links}, apigen.CreateNoteRequestObject{
-			Body: &apigen.NoteCreate{Title: in.Title, Body: in.Body},
+		Name:        "create_search",
+		Description: "Save an eBay search. Put the hard filters in the filter fields and everything else the user said about what they want in wants. Saving does not run it.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateSearchInput) (*mcpsdk.CallToolResult, SearchOutput, error) {
+		vm, err := server.BuildViewModel(ctx, searches.CreateEndpoint{Store: store, Links: links}, apigen.CreateSearchRequestObject{
+			Body: &apigen.SearchCreate{
+				Name: in.Name, Query: in.Query, CategoryIds: in.CategoryIDs, Conditions: in.Conditions,
+				BuyingOptions: in.BuyingOptions, MinPriceCents: in.MinPriceCents, MaxPriceCents: in.MaxPriceCents,
+				Currency: in.Currency, Marketplace: in.Marketplace, Wants: in.Wants, Watch: in.Watch,
+				AlertBelowCents: in.AlertBelowCents,
+			},
 		})
-		return nil, NoteOutput{Note: vm}, err
+		return nil, SearchOutput{Search: vm}, err
 	})
 
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
-		Name:        "update_note",
-		Description: "Change a note's title, body, or both. Fields left out stay as they are.",
-	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateNoteInput) (*mcpsdk.CallToolResult, NoteOutput, error) {
-		vm, err := server.BuildViewModel(ctx, notes.UpdateEndpoint{Store: store, Links: links}, apigen.UpdateNoteRequestObject{
-			NoteId: in.ID,
-			Body:   &apigen.NoteUpdate{Title: in.Title, Body: in.Body},
+		Name:        "update_search",
+		Description: "Change a saved search. Fields left out stay as they are.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateSearchInput) (*mcpsdk.CallToolResult, SearchOutput, error) {
+		vm, err := server.BuildViewModel(ctx, searches.UpdateEndpoint{Store: store, Links: links}, apigen.UpdateSearchRequestObject{
+			SearchId: in.ID,
+			Body: &apigen.SearchUpdate{
+				Name: in.Name, Query: in.Query, CategoryIds: in.CategoryIDs, Conditions: in.Conditions,
+				BuyingOptions: in.BuyingOptions, MinPriceCents: in.MinPriceCents, MaxPriceCents: in.MaxPriceCents,
+				Currency: in.Currency, Marketplace: in.Marketplace, Wants: in.Wants, Watch: in.Watch,
+				AlertBelowCents: in.AlertBelowCents,
+			},
 		})
-		return nil, NoteOutput{Note: vm}, err
+		return nil, SearchOutput{Search: vm}, err
 	})
 
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
-		Name:        "delete_note",
-		Description: "Delete a note. Confirm with the user first.",
-	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in NoteIDInput) (*mcpsdk.CallToolResult, OKOutput, error) {
-		ok, err := server.BuildViewModel(ctx, notes.DeleteEndpoint{Store: store}, apigen.DeleteNoteRequestObject{NoteId: in.ID})
+		Name:        "delete_search",
+		Description: "Delete a saved search. Confirm with the user first.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SearchIDInput) (*mcpsdk.CallToolResult, OKOutput, error) {
+		ok, err := server.BuildViewModel(ctx, searches.DeleteEndpoint{Store: store}, apigen.DeleteSearchRequestObject{SearchId: in.ID})
 		return nil, OKOutput{OK: ok}, err
 	})
 }

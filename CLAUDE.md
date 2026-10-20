@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Orientation for Claude Code sessions in this repo. See @README.md for the pitch and @docs/architecture.md for how it fits together.
+Orientation for Claude Code sessions in this repo. See @README.md for the pitch, @docs/design.md for what the app does and what is still to build, and @docs/architecture.md for how it fits together.
 
 ## Never edit
 

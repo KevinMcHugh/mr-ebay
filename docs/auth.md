@@ -1,6 +1,6 @@
 # Auth
 
-There are no tenants and no open sign-up. An **api key** is a person's identity. Every other credential (OAuth tokens, web sessions) acts as the key that approved it, and `auth.KeyID(ctx)` is how code learns who is calling.
+There are no tenants and no open sign-up. Every operation and page needs a credential: searches are personal, so nothing is public. An **api key** is a person's identity. Every other credential (OAuth tokens, web sessions) acts as the key that approved it, and `auth.KeyID(ctx)` is how code learns who is calling.
 
 ## Credentials
 
@@ -14,7 +14,7 @@ There are no tenants and no open sign-up. An **api key** is a person's identity.
 
 Only a SHA-256 hash of any of them is stored. Raw values are printed once, by the CLI, and never again. Deleting a key (`server keys delete --id …`) cuts off every token and session it approved, because those lookups join on a live key. `server keys rotate --id …` deletes a key and mints a replacement with the same name.
 
-The prefixes are constants in `internal/auth/auth.go`. `tools/rename.sh` changes them for your app.
+The prefixes are constants in `internal/auth/auth.go`.
 
 ## The OAuth flow (claude.ai)
 
@@ -35,9 +35,8 @@ Invites cover OAuth only. Signing in to the pages takes a raw key, so someone wh
 
 **The spec decides.** The global `security` in `api/openapi.yaml` requires a bearer token or the session cookie. An operation with `security: []` is public. An operation that says nothing inherits the requirement, so a new operation is private until someone deliberately opens it. `server.PublicOperations()` reads the public set from the embedded spec, and `TestPublicOperations` pins it, so opening an operation is a visible change in review.
 
-- Public API responses carry `Access-Control-Allow-Origin: *`, so another site can fetch them. No credentials are allowed cross-site, so this exposes nothing an anonymous caller could not already get. Private operations send no CORS header.
-- The read-only pages use `auth.Optional`: a valid session adds the forms, and a missing, expired or revoked one reads as signed out rather than locking the page.
-- Every write route on the pages uses `auth.Require` and `sameOrigin`, which refuses a POST whose `Origin` header names another site. That is a second lock after SameSite=Lax. Hiding a form from a signed-out visitor is only for looks.
+- Today no operation is public, and `TestPublicOperations` pins that. If one ever is, its responses carry `Access-Control-Allow-Origin: *`; private operations send no CORS header.
+- Every page uses `auth.Require` (a signed-out visitor is sent to `/login`) and `sameOrigin`, which refuses a POST whose `Origin` header names another site. That is a second lock after SameSite=Lax. `auth.Optional` is still there for a public page, should one be added.
 - MCP (`/mcp/rpc`) always requires a credential.
 
 ## Who can do what

@@ -74,22 +74,8 @@ CREATE TABLE invites (
 CREATE INDEX invites_active ON invites (created_at)
     WHERE used_at IS NULL AND deleted_at IS NULL;
 
--- The example resource. Replace it with your own (docs/adding-a-resource.md).
-CREATE TABLE notes (
-    id          CHAR(20)    PRIMARY KEY,
-    title       TEXT        NOT NULL,
-    body        TEXT        NOT NULL DEFAULT '',
-    created_by  CHAR(20)    REFERENCES api_keys(id),
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at  TIMESTAMPTZ
-);
-
-CREATE INDEX notes_active ON notes (created_at DESC) WHERE deleted_at IS NULL;
-
 -- migrate:down
 
-DROP TABLE notes;
 DROP TABLE invites;
 DROP TABLE oauth_tokens;
 DROP TABLE oauth_codes;

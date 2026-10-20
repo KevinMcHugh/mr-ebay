@@ -84,24 +84,17 @@ func (s *Server) Handler() http.Handler {
 		r.Handle("/mcp/rpc/*", s.MCP)
 	})
 
-	// The read-only pages are public, like the reads in the API. A
-	// signed-in visitor gets the same pages with their forms and buttons.
-	r.Group(func(r chi.Router) {
-		r.Use(auth.Optional(q))
-		r.Use(pageHeaders)
-		r.Get("/", s.indexPage)
-		r.Get("/notes/{id}", s.notePage)
-	})
-
-	// Everything that changes something needs a session. Hiding a form from
-	// a signed-out visitor is only for looks; this group is what stops them.
+	// Every page needs a session: searches and what they find are personal,
+	// like every operation in the API.
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Require(q, s.toLogin))
 		r.Use(s.sameOrigin)
 		r.Use(pageHeaders)
-		r.Post("/notes", s.createNote)
-		r.Post("/notes/{id}", s.updateNote)
-		r.Post("/notes/{id}/delete", s.deleteNote)
+		r.Get("/", s.indexPage)
+		r.Get("/searches/{id}", s.searchPage)
+		r.Post("/searches", s.createSearch)
+		r.Post("/searches/{id}", s.updateSearch)
+		r.Post("/searches/{id}/delete", s.deleteSearch)
 	})
 	return r
 }

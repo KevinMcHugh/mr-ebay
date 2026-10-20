@@ -1,0 +1,24 @@
+{{/* The search form, for a new search and for editing one. .Form is a
+     searches.Search; amounts show as decimals and blank means no limit. */}}
+{{define "searchFields"}}
+<label class="field">Name<input name="name" value="{{.Name}}" required maxlength="100" placeholder="rain shell, size M"></label>
+<label class="field">eBay keywords<input name="query" value="{{.Query}}" required maxlength="300" placeholder="arcteryx beta jacket"></label>
+<label class="field">What you want, in words (for Claude)<textarea name="wants" placeholder="Men's M. Gore-Tex, no delamination. Fine with scuffs.">{{.Wants}}</textarea></label>
+<div class="grid2">
+  <label class="field">Min price<input name="minPrice" value="{{dollars .MinPriceCents}}" inputmode="decimal" placeholder="none"></label>
+  <label class="field">Max price<input name="maxPrice" value="{{dollars .MaxPriceCents}}" inputmode="decimal" placeholder="none"></label>
+  <label class="field">Currency<input name="currency" value="{{.Currency}}" maxlength="3"></label>
+  <label class="field">Marketplace<input name="marketplace" value="{{.Marketplace}}"></label>
+  <label class="field">Category ids (comma-separated)<input name="categoryIds" value="{{join .CategoryIDs ", "}}" placeholder="any"></label>
+</div>
+<fieldset><legend class="muted">Condition (none ticked: any)</legend>
+  {{$sel := .Conditions}}{{range conditions}}<label class="check"><input type="checkbox" name="conditions" value="{{.}}"{{if has $sel .}} checked{{end}}>{{.}}</label>{{end}}
+</fieldset>
+<fieldset><legend class="muted">Buying options (none ticked: any)</legend>
+  {{$sel := .BuyingOptions}}{{range buyingOptions}}<label class="check"><input type="checkbox" name="buyingOptions" value="{{.}}"{{if has $sel .}} checked{{end}}>{{.}}</label>{{end}}
+</fieldset>
+<div class="grid2">
+  <label class="check"><input type="checkbox" name="watch" value="1"{{if .Watch}} checked{{end}}>Watch it and alert me</label>
+  <label class="field">Alert only at or below (total)<input name="alertBelow" value="{{dollars .AlertBelowCents}}" inputmode="decimal" placeholder="every new match"></label>
+</div>
+{{end}}

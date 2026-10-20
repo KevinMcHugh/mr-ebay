@@ -45,12 +45,22 @@ form.inline { display: inline; }
    button: user-select: all makes one click select the whole id. */
 code.id { font-family: ui-monospace, Menlo, monospace; font-size: .8rem; padding: .05rem .35rem; border: 1px dashed var(--line); border-radius: 4px; user-select: all; -webkit-user-select: all; cursor: text; word-break: break-all; }
 details summary { cursor: pointer; color: var(--accent); }
+.grid2 { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+fieldset { border: 1px solid var(--line); border-radius: 6px; padding: .4rem .7rem; display: flex; gap: .9rem; flex-wrap: wrap; }
+label.check { display: inline-flex; gap: .3rem; align-items: center; }
+label.check input { width: auto; }
+label.field { display: grid; gap: .2rem; font-size: .85rem; color: var(--muted); }
+.tag { display: inline-block; padding: 0 .45rem; border-radius: 999px; border: 1px solid var(--line); font-size: .8rem; color: var(--muted); }
+.tag.on { border-color: var(--ok); color: var(--ok); }
+dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: .2rem 1rem; margin: .5rem 0; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; }
 </style>
 </head>
 <body>
 <header class="top">
   <a class="brand" href="/">{{.AppName}}</a>
-  <nav><a href="/">Notes</a></nav>
+  <nav>{{if .SignedIn}}<a href="/">Searches</a>{{end}}</nav>
   {{block "account" .}}{{if .SignedIn}}<form class="inline" method="POST" action="/logout"><button class="ghost" type="submit">Sign out</button></form>{{else}}<a class="btn ghost" href="/login?next={{.Path}}">Sign in</a>{{end}}{{end}}
 </header>
 <main>

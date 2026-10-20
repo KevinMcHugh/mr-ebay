@@ -84,7 +84,7 @@ func (s *Store) RedeemInvite(ctx context.Context, raw string, approve func(q *db
 
 // Links builds the absolute URLs that view models carry.
 type Links struct {
-	// Base is the app's public origin ("https://app-xyz.sprites.app").
+	// Base is the app's public origin ("https://mr-ebay-xyz.sprites.app").
 	// Empty gives relative links.
 	Base string
 }
@@ -92,8 +92,8 @@ type Links struct {
 // NewLinks trims base for joining.
 func NewLinks(base string) Links { return Links{Base: strings.TrimRight(base, "/")} }
 
-// Note is a note's page.
-func (l Links) Note(id string) string { return l.Base + "/notes/" + id }
+// Search is a saved search's page.
+func (l Links) Search(id string) string { return l.Base + "/searches/" + id }
 
 // NotFound turns pgx's no-rows into ErrNotFound, naming what was missing.
 func NotFound(err error, what, id string) error {

@@ -2,7 +2,8 @@ openapi: 3.0.3
 info:
   title: Mr. eBay API
   description: |
-    The JSON API. This spec is the HTTP surface's source of truth:
+    Saved eBay searches, the listings they find, and their price history.
+    See docs/design.md. This spec is the HTTP surface's source of truth:
     `make generate` turns it into internal/api/gen.
 
     Every operation needs a credential unless it says `security: []`: an
@@ -34,34 +35,35 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /notes:
+  /searches:
     get:
-      operationId: listNotes
-      summary: List notes, newest first
-      security: []
+      operationId: listSearches
+      summary: List saved searches, newest first
       responses:
         "200":
-          description: The notes
+          description: The searches
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/NoteList"
+                $ref: "#/components/schemas/SearchList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     post:
-      operationId: createNote
-      summary: Create a note
+      operationId: createSearch
+      summary: Save a search
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/NoteCreate"
+              $ref: "#/components/schemas/SearchCreate"
       responses:
         "201":
-          description: The created note
+          description: The saved search
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Note"
+                $ref: "#/components/schemas/Search"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -69,38 +71,39 @@ paths:
         "422":
           $ref: "#/components/responses/Unprocessable"
 
-  /notes/{noteId}:
+  /searches/{searchId}:
     parameters:
-      - $ref: "#/components/parameters/NoteId"
+      - $ref: "#/components/parameters/SearchId"
     get:
-      operationId: getNote
-      summary: One note
-      security: []
+      operationId: getSearch
+      summary: One saved search
       responses:
         "200":
-          description: The note
+          description: The search
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Note"
+                $ref: "#/components/schemas/Search"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
     patch:
-      operationId: updateNote
-      summary: Change a note's title, body, or both
+      operationId: updateSearch
+      summary: Change a saved search
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/NoteUpdate"
+              $ref: "#/components/schemas/SearchUpdate"
       responses:
         "200":
-          description: The updated note
+          description: The updated search
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Note"
+                $ref: "#/components/schemas/Search"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -110,8 +113,8 @@ paths:
         "422":
           $ref: "#/components/responses/Unprocessable"
     delete:
-      operationId: deleteNote
-      summary: Delete a note
+      operationId: deleteSearch
+      summary: Delete a saved search
       responses:
         "204":
           description: Deleted
@@ -133,8 +136,8 @@ components:
       description: The web session set by /login.
 
   parameters:
-    NoteId:
-      name: noteId
+    SearchId:
+      name: searchId
       in: path
       required: true
       schema:
@@ -184,16 +187,61 @@ components:
           type: string
           description: The label the key was minted with.
 
-    Note:
+    Search:
       type: object
-      required: [id, title, body, createdAt, updatedAt, url]
+      required: [id, name, query, categoryIds, conditions, buyingOptions, currency, marketplace, wants, watch, newCount, createdAt, updatedAt, url]
       properties:
         id:
           type: string
-        title:
+        name:
           type: string
-        body:
+        query:
           type: string
+          description: eBay keywords.
+        categoryIds:
+          type: array
+          items:
+            type: string
+        conditions:
+          type: array
+          description: Any of NEW, USED, UNSPECIFIED; empty for any condition.
+          items:
+            type: string
+        buyingOptions:
+          type: array
+          description: Any of FIXED_PRICE, AUCTION, BEST_OFFER; empty for any.
+          items:
+            type: string
+        minPriceCents:
+          type: integer
+          format: int64
+          description: Omitted when there is no minimum.
+        maxPriceCents:
+          type: integer
+          format: int64
+          description: Omitted when there is no maximum.
+        currency:
+          type: string
+        marketplace:
+          type: string
+        wants:
+          type: string
+          description: What you are after, in words, for the judgment calls a filter cannot make.
+        watch:
+          type: boolean
+          description: Run unattended on the watch schedule.
+        alertBelowCents:
+          type: integer
+          format: int64
+          description: A watched search alerts on matches at or below this total. Omitted to alert on every new match.
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+          x-go-type-skip-optional-pointer: false
+        newCount:
+          type: integer
+          description: Matches not yet looked at.
         createdAt:
           type: string
           format: date-time
@@ -202,33 +250,104 @@ components:
           format: date-time
         url:
           type: string
-          description: The note's web page.
+          description: The search's web page.
 
-    NoteList:
+    SearchList:
       type: object
-      required: [notes]
+      required: [searches]
       properties:
-        notes:
+        searches:
           type: array
           items:
-            $ref: "#/components/schemas/Note"
+            $ref: "#/components/schemas/Search"
 
-    NoteCreate:
+    SearchCreate:
       type: object
-      required: [title]
+      description: Prices are in cents of currency; 0 or omitted means no limit.
+      required: [name, query]
       properties:
-        title:
+        name:
           type: string
-        body:
+        query:
           type: string
+        categoryIds:
+          type: array
+          items:
+            type: string
+        conditions:
+          type: array
+          items:
+            type: string
+        buyingOptions:
+          type: array
+          items:
+            type: string
+        minPriceCents:
+          type: integer
+          format: int64
+        maxPriceCents:
+          type: integer
+          format: int64
+        currency:
+          type: string
+          description: Default USD.
+        marketplace:
+          type: string
+          description: Default EBAY_US.
+        wants:
+          type: string
+        watch:
+          type: boolean
+        alertBelowCents:
+          type: integer
+          format: int64
 
-    NoteUpdate:
+    SearchUpdate:
       type: object
-      description: Fields left out are left alone.
+      description: Fields left out are left alone. A price of 0 removes that limit.
       properties:
-        title:
+        name:
           type: string
           x-go-type-skip-optional-pointer: false
-        body:
+        query:
           type: string
+          x-go-type-skip-optional-pointer: false
+        categoryIds:
+          type: array
+          items:
+            type: string
+          x-go-type-skip-optional-pointer: false
+        conditions:
+          type: array
+          items:
+            type: string
+          x-go-type-skip-optional-pointer: false
+        buyingOptions:
+          type: array
+          items:
+            type: string
+          x-go-type-skip-optional-pointer: false
+        minPriceCents:
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        maxPriceCents:
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        currency:
+          type: string
+          x-go-type-skip-optional-pointer: false
+        marketplace:
+          type: string
+          x-go-type-skip-optional-pointer: false
+        wants:
+          type: string
+          x-go-type-skip-optional-pointer: false
+        watch:
+          type: boolean
+          x-go-type-skip-optional-pointer: false
+        alertBelowCents:
+          type: integer
+          format: int64
           x-go-type-skip-optional-pointer: false

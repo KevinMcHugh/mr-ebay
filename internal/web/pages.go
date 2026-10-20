@@ -3,10 +3,14 @@ package web
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -14,19 +18,61 @@ import (
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	"github.com/KevinMcHugh/mr-ebay/internal/auth"
 	"github.com/KevinMcHugh/mr-ebay/internal/server"
-	"github.com/KevinMcHugh/mr-ebay/internal/server/notes"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/searches"
 )
 
 // The pages drive the same endpoints as the JSON API and MCP, through
 // server.BuildViewModel, and render the view models as HTML.
 
 func parsePages() map[string]*template.Template {
+	funcs := template.FuncMap{
+		"money":         money,
+		"dollars":       dollars,
+		"join":          strings.Join,
+		"has":           slices.Contains[[]string],
+		"conditions":    func() []string { return searches.Conditions },
+		"buyingOptions": func() []string { return searches.BuyingOptions },
+	}
 	pages := map[string]*template.Template{}
-	for _, name := range []string{"login", "index", "note"} {
-		pages[name] = template.Must(template.New("layout.html").
-			ParseFS(templateFS, "templates/layout.html", "templates/"+name+".html"))
+	for _, name := range []string{"login", "index", "search"} {
+		pages[name] = template.Must(template.New("layout.html").Funcs(funcs).
+			ParseFS(templateFS, "templates/layout.html", "templates/form.html", "templates/"+name+".html"))
 	}
 	return pages
+}
+
+// money is cents of a currency for reading: "12.50 USD".
+func money(cents int64, currency string) string {
+	return dollars(cents) + " " + currency
+}
+
+// dollars is cents as a decimal amount, "" for 0 (no limit), for a form
+// field.
+func dollars(cents int64) string {
+	if cents == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d.%02d", cents/100, cents%100)
+}
+
+// parseCents reads a form's decimal amount ("12", "12.5", "12.50") as
+// cents; blank is 0, which means no limit.
+func parseCents(field, s string) (int64, error) {
+	s = strings.TrimPrefix(strings.TrimSpace(s), "$")
+	if s == "" {
+		return 0, nil
+	}
+	whole, frac, _ := strings.Cut(s, ".")
+	if len(frac) > 2 {
+		return 0, fmt.Errorf("%w: %s %q has more than two decimal places", app.ErrBadInput, field, s)
+	}
+	frac = (frac + "00")[:2]
+	w, err1 := strconv.ParseInt(whole, 10, 64)
+	f, err2 := strconv.ParseInt(frac, 10, 64)
+	if err1 != nil || err2 != nil || w < 0 {
+		return 0, fmt.Errorf("%w: %s %q is not an amount like 12.50", app.ErrBadInput, field, s)
+	}
+	return w*100 + f, nil
 }
 
 // render writes a page through a buffer, so a template error becomes a 500
@@ -88,61 +134,102 @@ func redirect(w http.ResponseWriter, r *http.Request, path, msg string, isErr bo
 	http.Redirect(w, r, path+"?"+key+"="+url.QueryEscape(msg), http.StatusSeeOther)
 }
 
-// ---- notes ------------------------------------------------------------------
+// ---- searches ---------------------------------------------------------------
 
 func (s *Server) indexPage(w http.ResponseWriter, r *http.Request) {
-	list, err := server.BuildViewModel(r.Context(), notes.ListEndpoint{Store: s.Store, Links: s.Links}, apigen.ListNotesRequestObject{})
+	list, err := server.BuildViewModel(r.Context(), searches.ListEndpoint{Store: s.Store, Links: s.Links}, apigen.ListSearchesRequestObject{})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "index", map[string]any{"Notes": list})
-}
-
-func (s *Server) notePage(w http.ResponseWriter, r *http.Request) {
-	n, err := server.BuildViewModel(r.Context(), notes.GetEndpoint{Store: s.Store, Links: s.Links}, apigen.GetNoteRequestObject{NoteId: chi.URLParam(r, "id")})
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	s.render(w, r, http.StatusOK, "note", map[string]any{"Note": n})
-}
-
-func (s *Server) createNote(w http.ResponseWriter, r *http.Request) {
-	n, err := server.BuildViewModel(r.Context(), notes.CreateEndpoint{Store: s.Store, Links: s.Links}, apigen.CreateNoteRequestObject{
-		Body: &apigen.NoteCreate{Title: r.FormValue("title"), Body: r.FormValue("body")},
+	s.render(w, r, http.StatusOK, "index", map[string]any{
+		"Searches": list,
+		"Form":     searches.Search{Currency: "USD", Marketplace: "EBAY_US"},
 	})
+}
+
+func (s *Server) searchPage(w http.ResponseWriter, r *http.Request) {
+	sr, err := server.BuildViewModel(r.Context(), searches.GetEndpoint{Store: s.Store, Links: s.Links}, apigen.GetSearchRequestObject{SearchId: chi.URLParam(r, "id")})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, "search", map[string]any{"Search": sr, "Form": sr})
+}
+
+// searchForm reads the search form. Every field is on the form, so it is
+// a whole search, for create and update alike.
+func searchForm(r *http.Request) (apigen.SearchCreate, error) {
+	if err := r.ParseForm(); err != nil {
+		return apigen.SearchCreate{}, fmt.Errorf("%w: %v", app.ErrBadInput, err)
+	}
+	var cents [3]int64
+	for i, field := range []string{"minPrice", "maxPrice", "alertBelow"} {
+		c, err := parseCents(field, r.FormValue(field))
+		if err != nil {
+			return apigen.SearchCreate{}, err
+		}
+		cents[i] = c
+	}
+	var cats []string
+	for _, c := range strings.Split(r.FormValue("categoryIds"), ",") {
+		if c = strings.TrimSpace(c); c != "" {
+			cats = append(cats, c)
+		}
+	}
+	return apigen.SearchCreate{
+		Name: r.FormValue("name"), Query: r.FormValue("query"), CategoryIds: cats,
+		Conditions: r.Form["conditions"], BuyingOptions: r.Form["buyingOptions"],
+		MinPriceCents: cents[0], MaxPriceCents: cents[1], AlertBelowCents: cents[2],
+		Currency: r.FormValue("currency"), Marketplace: r.FormValue("marketplace"),
+		Wants: r.FormValue("wants"), Watch: r.FormValue("watch") != "",
+	}, nil
+}
+
+func (s *Server) createSearch(w http.ResponseWriter, r *http.Request) {
+	body, err := searchForm(r)
+	if err == nil {
+		var sr searches.Search
+		sr, err = server.BuildViewModel(r.Context(), searches.CreateEndpoint{Store: s.Store, Links: s.Links}, apigen.CreateSearchRequestObject{Body: &body})
+		if err == nil {
+			redirect(w, r, "/searches/"+url.PathEscape(sr.ID), "Saved.", false)
+			return
+		}
+	}
 	if errors.Is(err, app.ErrBadInput) {
 		redirect(w, r, "/", err.Error(), true)
 		return
 	}
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	redirect(w, r, "/notes/"+url.PathEscape(n.ID), "Saved.", false)
+	s.fail(w, r, err)
 }
 
-func (s *Server) updateNote(w http.ResponseWriter, r *http.Request) {
+func (s *Server) updateSearch(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	title, body := r.FormValue("title"), r.FormValue("body")
-	_, err := server.BuildViewModel(r.Context(), notes.UpdateEndpoint{Store: s.Store, Links: s.Links}, apigen.UpdateNoteRequestObject{
-		NoteId: id,
-		Body:   &apigen.NoteUpdate{Title: &title, Body: &body},
-	})
+	b, err := searchForm(r)
+	if err == nil {
+		_, err = server.BuildViewModel(r.Context(), searches.UpdateEndpoint{Store: s.Store, Links: s.Links}, apigen.UpdateSearchRequestObject{
+			SearchId: id,
+			Body: &apigen.SearchUpdate{
+				Name: &b.Name, Query: &b.Query, CategoryIds: &b.CategoryIds, Conditions: &b.Conditions,
+				BuyingOptions: &b.BuyingOptions, MinPriceCents: &b.MinPriceCents, MaxPriceCents: &b.MaxPriceCents,
+				Currency: &b.Currency, Marketplace: &b.Marketplace, Wants: &b.Wants, Watch: &b.Watch,
+				AlertBelowCents: &b.AlertBelowCents,
+			},
+		})
+	}
 	if errors.Is(err, app.ErrBadInput) {
-		redirect(w, r, "/notes/"+url.PathEscape(id), err.Error(), true)
+		redirect(w, r, "/searches/"+url.PathEscape(id), err.Error(), true)
 		return
 	}
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	redirect(w, r, "/notes/"+url.PathEscape(id), "Saved.", false)
+	redirect(w, r, "/searches/"+url.PathEscape(id), "Saved.", false)
 }
 
-func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
-	if _, err := server.BuildViewModel(r.Context(), notes.DeleteEndpoint{Store: s.Store}, apigen.DeleteNoteRequestObject{NoteId: chi.URLParam(r, "id")}); err != nil {
+func (s *Server) deleteSearch(w http.ResponseWriter, r *http.Request) {
+	if _, err := server.BuildViewModel(r.Context(), searches.DeleteEndpoint{Store: s.Store}, apigen.DeleteSearchRequestObject{SearchId: chi.URLParam(r, "id")}); err != nil {
 		s.fail(w, r, err)
 		return
 	}

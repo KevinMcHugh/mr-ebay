@@ -1,27 +1,23 @@
-{{define "title"}}Notes · {{.AppName}}{{end}}
+{{define "title"}}Searches · {{.AppName}}{{end}}
 {{define "content"}}
-<h1>Notes</h1>
-<p class="muted">{{len .Notes}} note{{if ne (len .Notes) 1}}s{{end}}.</p>
-{{if .SignedIn}}
-<details class="panel"{{if not .Notes}} open{{end}}>
-  <summary>New note</summary>
-  <form method="POST" action="/notes" class="stack" style="margin-top:.75rem">
-    <input name="title" placeholder="Title" aria-label="Title" required maxlength="200">
-    <textarea name="body" placeholder="Body" aria-label="Body"></textarea>
+<h1>Saved searches</h1>
+<p class="muted">{{len .Searches}} search{{if ne (len .Searches) 1}}es{{end}}.</p>
+<details class="panel"{{if not .Searches}} open{{end}}>
+  <summary>New search</summary>
+  <form method="POST" action="/searches" class="stack" style="margin-top:.75rem">
+    {{template "searchFields" .Form}}
     <div><button type="submit">Save</button></div>
   </form>
 </details>
-{{end}}
-{{if not .Notes}}
-<div class="panel"><p>No notes yet.{{if not .SignedIn}} <a href="/login?next=/">Sign in</a> to add one, or ask Claude over MCP.{{end}}</p></div>
-{{end}}
 <div class="list">
-{{range .Notes}}
+{{range .Searches}}
   <article class="card">
-    <h3><a href="/notes/{{.ID}}">{{.Title}}</a></h3>
-    {{if .Body}}<div class="excerpt">{{.Body}}</div>{{end}}
-    <div class="row muted" style="font-size:.8rem">
-      <span>{{.UpdatedAt.Format "2006-01-02 15:04"}}</span>
+    <h3><a href="/searches/{{.ID}}">{{.Name}}</a></h3>
+    <div class="muted">“{{.Query}}”{{if .MaxPriceCents}} · up to {{money .MaxPriceCents .Currency}}{{end}}</div>
+    <div class="row" style="font-size:.8rem">
+      {{if .Watch}}<span class="tag on">watching</span>{{end}}
+      {{if .NewCount}}<span class="tag on">{{.NewCount}} new</span>{{end}}
+      <span class="muted">{{if .LastRunAt}}last run {{.LastRunAt.Format "2006-01-02 15:04"}}{{else}}never run{{end}}</span>
       <code class="id" title="Click to select. This is the id the MCP tools take.">{{.ID}}</code>
     </div>
   </article>

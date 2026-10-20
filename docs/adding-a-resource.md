@@ -1,6 +1,6 @@
 # Adding a resource, end to end
 
-A recipe for a new CRUD resource, using `widget` as the example. The notes resource (`internal/server/notes`) is a complete worked example of every step; copying it and renaming is usually the quickest start.
+A recipe for a new CRUD resource, using `widget` as the example. The searches resource (`internal/server/searches`) is a complete worked example of every step.
 
 ## 1. Migration
 
@@ -56,7 +56,7 @@ Every read and write filters `deleted_at IS NULL`.
 
 ## 3. Spec
 
-Add paths and schemas to `api/openapi.yaml`, following the notes entries. Then decide who may call each operation:
+Add paths and schemas to `api/openapi.yaml`, following the searches entries. Then decide who may call each operation:
 
 - Leave `security` out and the operation is **private**, inheriting the global bearer-or-cookie requirement.
 - Add `security: []` only to make it **public**. Public responses also get `Access-Control-Allow-Origin: *`.
@@ -75,7 +75,7 @@ The build now fails at `var _ apigen.StrictServerInterface = (*Server)(nil)` unt
 
 ## 5. Endpoints
 
-Create `internal/server/widgets/widgets.go`, using `notes/notes.go` as the model:
+Create `internal/server/widgets/widgets.go`, using `searches/searches.go` as the model:
 
 - a view model `Widget` with JSON tags, `ToViewModel(dbgen.Widget, app.Links) Widget`, and an unexported `toAPI(Widget) apigen.Widget`;
 - for each operation, a narrow `Store` interface and an endpoint struct with `Interact`, `Build` and `Render`;

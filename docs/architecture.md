@@ -4,8 +4,8 @@
 
 ```
                      ┌──────────── internal/web (chi router) ────────────┐
-browser  ──/, /notes/{id}──▶ auth.Optional ─▶ page handler ─┐            │
-browser  ──POST /notes…────▶ auth.Require  ─▶ page handler ─┤            │
+browser  ──/, /searches/…─▶ auth.Require  ─▶ page handler ─┐            │
+                                                            │            │
 script   ──/api/…──────────▶ spec guard ──▶ strict server ─┼─▶ Endpoint ─┼─▶ Store ─▶ Postgres
 Claude   ──/mcp/rpc────────▶ auth.Require  ─▶ MCP tool ─────┘   (Interact│   (sqlc)
 claude.ai──/oauth/…, /.well-known/…  ─▶ internal/oauth             Build) │
@@ -39,7 +39,7 @@ type Endpoint[Req, M, VM, Res any] interface {
 ```
 
 - `Req` is the generated `…RequestObject`, even when an MCP tool or a page is the caller. They fill one in themselves, so input validation lives in the endpoint and nowhere else.
-- Each endpoint declares a `Store` interface with only the methods it calls (`notes.GetStore` is just `GetNote`). This keeps an endpoint's reach obvious and makes a fake easy to write. `*app.Store` satisfies every one, because it embeds `*dbgen.Queries` and sqlc generates every method.
+- Each endpoint declares a `Store` interface with only the methods it calls (`searches.DeleteStore` is just `DeleteSearch`). This keeps an endpoint's reach obvious and makes a fake easy to write. `*app.Store` satisfies every one, because it embeds `*dbgen.Queries` and sqlc generates every method.
 - View models carry JSON tags, because MCP tools return them as is.
 - Errors: wrap `app.ErrNotFound` or `app.ErrBadInput` with a message (`app.NotFound` converts pgx's no-rows). `server.go` turns them into the spec's 404 and 422 bodies, the pages turn them into statuses or a redirect with `?err=`, and MCP returns them as tool errors.
 
@@ -47,8 +47,8 @@ type Endpoint[Req, M, VM, Res any] interface {
 
 - **xid ids** in `CHAR(20)`. They are sortable, URL-safe and short enough to read aloud.
 - **Soft delete everywhere.** Every live table has `created_at`, `updated_at`, `deleted_at`, and every query filters `deleted_at IS NULL`. A delete is an `UPDATE`, and `:execrows` tells the endpoint whether anything was there.
-- **Partial updates.** `COALESCE(sqlc.narg(x), x)` in SQL and a pointer field in the spec (`x-go-type-skip-optional-pointer: false`) mean a PATCH sends only what changes. Everything else optional stays a plain value (`prefer-skip-optional-pointer`), so conversions need no pointer per field.
-- **No tenants.** Everyone sees the same data, and the api key behind a request is recorded on what it creates (`created_by`). See "Adding tenants" below if your app needs isolation.
+- **Partial updates.** A pointer field in the spec (`x-go-type-skip-optional-pointer: false`) means a PATCH sends only what changes. When no field can be NULL, `COALESCE(sqlc.narg(x), x)` in SQL applies it. Searches cannot use that, because a price limit of NULL means "no limit": `searches.UpdateEndpoint` lays the patch over the stored row and writes every field. Everything else optional stays a plain value (`prefer-skip-optional-pointer`), so conversions need no pointer per field.
+- **No tenants.** Every key sees the same searches, and the api key behind a request is recorded on what it creates (`created_by`). See "Adding tenants" below if your app needs isolation.
 
 ## Why it is this way
 
@@ -64,7 +64,7 @@ Most of these were learned the hard way in inventory or Creature Lab.
 
 ## Adding tenants
 
-Inventory is multi-tenant; this template is not. To add tenants:
+Inventory is multi-tenant; this app, like the template it came from, is not. To add tenants:
 
 1. Add a `tenants` table and a `tenant_id` column on `api_keys` and on every resource table. Scope the unique indexes by tenant.
 2. Have `auth.Resolve` return the key's tenant too, and put it on the context (`auth.TenantID(ctx)`).

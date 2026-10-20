@@ -26,7 +26,7 @@ import (
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	"github.com/KevinMcHugh/mr-ebay/internal/auth"
 	dbgen "github.com/KevinMcHugh/mr-ebay/internal/db/gen"
-	"github.com/KevinMcHugh/mr-ebay/internal/server/notes"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/searches"
 	"github.com/KevinMcHugh/mr-ebay/internal/web"
 )
 
@@ -139,7 +139,8 @@ func TestAPIFlow(t *testing.T) {
 		t.Fatalf("401 does not point at OAuth discovery: %q", resp.Header.Get("WWW-Authenticate"))
 	}
 	e.do("GET", "/api/me", auth.KeyPrefix+"not-a-key", nil, http.StatusUnauthorized, nil)
-	e.do("POST", "/api/notes", "", map[string]any{"title": "x"}, http.StatusUnauthorized, nil)
+	e.do("POST", "/api/searches", "", map[string]any{"name": "x", "query": "y"}, http.StatusUnauthorized, nil)
+	e.do("GET", "/api/searches", "", nil, http.StatusUnauthorized, nil)
 
 	var me struct{ KeyID, Name string }
 	e.do("GET", "/api/me", e.key, nil, http.StatusOK, &me)
@@ -147,37 +148,38 @@ func TestAPIFlow(t *testing.T) {
 		t.Fatalf("me %+v", me)
 	}
 
-	var n notes.Note
-	e.do("POST", "/api/notes", e.key, map[string]any{"title": "  first  ", "body": "hello"}, http.StatusCreated, &n)
-	if n.Title != "first" || n.Body != "hello" || n.URL != e.url+"/notes/"+n.ID {
-		t.Fatalf("created %+v", n)
+	var sr searches.Search
+	e.do("POST", "/api/searches", e.key, map[string]any{
+		"name": " rain shell ", "query": "arcteryx beta", "conditions": []string{"used"},
+		"maxPriceCents": 20000, "wants": "size M", "watch": true,
+	}, http.StatusCreated, &sr)
+	if sr.Name != "rain shell" || sr.Currency != "USD" || sr.Marketplace != "EBAY_US" || sr.MaxPriceCents != 20000 ||
+		len(sr.Conditions) != 1 || sr.Conditions[0] != "USED" || !sr.Watch || sr.LastRunAt != nil || sr.URL != e.url+"/searches/"+sr.ID {
+		t.Fatalf("created %+v", sr)
 	}
-	e.do("POST", "/api/notes", e.key, map[string]any{"title": "  "}, http.StatusUnprocessableEntity, nil)
-	e.do("POST", "/api/notes", e.key, map[string]any{"title": strings.Repeat("x", notes.MaxTitle+1)}, http.StatusUnprocessableEntity, nil)
+	e.do("POST", "/api/searches", e.key, map[string]any{"name": "x", "query": " "}, http.StatusUnprocessableEntity, nil)
+	e.do("POST", "/api/searches", e.key, map[string]any{"name": "x", "query": "y", "conditions": []string{"MINT"}}, http.StatusUnprocessableEntity, nil)
+	e.do("POST", "/api/searches", e.key, map[string]any{"name": "x", "query": "y", "minPriceCents": 500, "maxPriceCents": 100}, http.StatusUnprocessableEntity, nil)
 
-	// A PATCH changes only what it sends.
-	var upd notes.Note
-	e.do("PATCH", "/api/notes/"+n.ID, e.key, map[string]any{"body": "changed"}, http.StatusOK, &upd)
-	if upd.Title != "first" || upd.Body != "changed" {
+	// A PATCH changes only what it sends, and a price of 0 removes the limit.
+	var upd searches.Search
+	e.do("PATCH", "/api/searches/"+sr.ID, e.key, map[string]any{"maxPriceCents": 0, "minPriceCents": 5000}, http.StatusOK, &upd)
+	if upd.MaxPriceCents != 0 || upd.MinPriceCents != 5000 || upd.Query != "arcteryx beta" || upd.Wants != "size M" || !upd.Watch {
 		t.Fatalf("updated %+v", upd)
 	}
-	e.do("PATCH", "/api/notes/nope", e.key, map[string]any{"body": "x"}, http.StatusNotFound, nil)
+	e.do("PATCH", "/api/searches/"+sr.ID, e.key, map[string]any{"maxPriceCents": 100}, http.StatusUnprocessableEntity, nil)
+	e.do("PATCH", "/api/searches/nope", e.key, map[string]any{"wants": "x"}, http.StatusNotFound, nil)
 
-	// Reads are public.
-	var list struct{ Notes []notes.Note }
-	resp = e.do("GET", "/api/notes", "", nil, http.StatusOK, &list)
-	if len(list.Notes) != 1 || list.Notes[0].ID != n.ID {
+	var list struct{ Searches []searches.Search }
+	e.do("GET", "/api/searches", e.key, nil, http.StatusOK, &list)
+	if len(list.Searches) != 1 || list.Searches[0].ID != sr.ID || list.Searches[0].NewCount != 0 {
 		t.Fatalf("list %+v", list)
 	}
-	if resp.Header.Get("Access-Control-Allow-Origin") != "*" {
-		t.Fatal("public read has no CORS header")
-	}
-	e.do("GET", "/api/notes/"+n.ID, "", nil, http.StatusOK, nil)
 
 	// Delete is soft, and a second one is a 404.
-	e.do("DELETE", "/api/notes/"+n.ID, e.key, nil, http.StatusNoContent, nil)
-	e.do("DELETE", "/api/notes/"+n.ID, e.key, nil, http.StatusNotFound, nil)
-	e.do("GET", "/api/notes/"+n.ID, "", nil, http.StatusNotFound, nil)
+	e.do("DELETE", "/api/searches/"+sr.ID, e.key, nil, http.StatusNoContent, nil)
+	e.do("DELETE", "/api/searches/"+sr.ID, e.key, nil, http.StatusNotFound, nil)
+	e.do("GET", "/api/searches/"+sr.ID, e.key, nil, http.StatusNotFound, nil)
 }
 
 // pkce is a verifier and its S256 challenge.
@@ -352,8 +354,12 @@ func TestWebPages(t *testing.T) {
 		return string(b)
 	}
 
-	// Signed out, writes bounce.
-	resp, _ := browser.PostForm(e.url+"/notes", url.Values{"title": {"x"}})
+	// Signed out, every page sends the browser to sign in, and writes bounce.
+	resp, _ := browser.Get(e.url + "/")
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(resp.Header.Get("Location"), "/login") {
+		t.Fatalf("signed-out index: %d %s", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	resp, _ = browser.PostForm(e.url+"/searches", url.Values{"name": {"x"}, "query": {"y"}})
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("signed-out create: %d", resp.StatusCode)
 	}
@@ -366,55 +372,53 @@ func TestWebPages(t *testing.T) {
 		t.Fatalf("login: %d %s (next must stay on this site)", resp.StatusCode, resp.Header.Get("Location"))
 	}
 
-	resp, _ = browser.PostForm(e.url+"/notes", url.Values{"title": {"Groceries"}, "body": {"eggs\nmilk"}})
-	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("create: %d", resp.StatusCode)
+	resp, _ = browser.PostForm(e.url+"/searches", url.Values{
+		"name": {"Rain shell"}, "query": {"arcteryx beta"}, "maxPrice": {"$200"}, "minPrice": {"12.5"},
+		"conditions": {"USED"}, "buyingOptions": {"FIXED_PRICE", "BEST_OFFER"}, "categoryIds": {"57988, 11450"},
+		"currency": {"USD"}, "marketplace": {"EBAY_US"}, "wants": {"size M"}, "watch": {"1"},
+	})
+	if resp.StatusCode != http.StatusSeeOther || strings.Contains(resp.Header.Get("Location"), "err=") {
+		t.Fatalf("create: %d %s", resp.StatusCode, resp.Header.Get("Location"))
 	}
-	notePath, _, _ := strings.Cut(resp.Header.Get("Location"), "?")
-	noteID := strings.TrimPrefix(notePath, "/notes/")
-	if body := page("/"); !strings.Contains(body, "Groceries") || !strings.Contains(body, ">"+noteID+"</code>") {
-		t.Fatal("index does not list the note with its id")
+	searchPath, _, _ := strings.Cut(resp.Header.Get("Location"), "?")
+	searchID := strings.TrimPrefix(searchPath, "/searches/")
+	if body := page("/"); !strings.Contains(body, "Rain shell") || !strings.Contains(body, ">"+searchID+"</code>") || !strings.Contains(body, "watching") {
+		t.Fatal("index does not list the search with its id")
 	}
-	resp, _ = browser.PostForm(e.url+"/notes", url.Values{"title": {""}})
+	detail := page(searchPath)
+	for _, want := range []string{"from 12.50 USD", "up to 200.00 USD", "BEST_OFFER, FIXED_PRICE", "11450, 57988", `value="12.50"`, "size M", "Sign out"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("search page lacks %q", want)
+		}
+	}
+	resp, _ = browser.PostForm(e.url+"/searches", url.Values{"name": {"x"}, "query": {"y"}, "maxPrice": {"1.234"}})
 	if loc := resp.Header.Get("Location"); resp.StatusCode != http.StatusSeeOther || !strings.Contains(loc, "err=") {
-		t.Fatalf("an empty title should come back as a message: %d %s", resp.StatusCode, loc)
+		t.Fatalf("a bad amount should come back as a message: %d %s", resp.StatusCode, loc)
 	}
 
-	resp, _ = browser.PostForm(e.url+notePath, url.Values{"title": {"Groceries"}, "body": {"eggs"}})
+	// The edit form posts every field; clearing max price removes the limit.
+	resp, _ = browser.PostForm(e.url+searchPath, url.Values{"name": {"Rain shell"}, "query": {"arcteryx beta"}, "maxPrice": {""}})
 	if resp.StatusCode != http.StatusSeeOther || strings.Contains(resp.Header.Get("Location"), "err=") {
 		t.Fatalf("update: %d %s", resp.StatusCode, resp.Header.Get("Location"))
 	}
-	signedIn := page(notePath + "?msg=Saved.")
-	for _, want := range []string{"eggs", "Saved.", "Edit", "Delete", "Sign out"} {
-		if !strings.Contains(signedIn, want) {
-			t.Errorf("signed-in note page lacks %q", want)
-		}
+	if body := page(searchPath); strings.Contains(body, "up to") || strings.Contains(body, "watching") {
+		t.Error("update did not clear the max price and watch")
 	}
 
 	// A cross-site form post is refused even with the cookie.
-	req, _ := http.NewRequest("POST", e.url+notePath+"/delete", nil)
+	req, _ := http.NewRequest("POST", e.url+searchPath+"/delete", nil)
 	req.Header.Set("Origin", "https://evil.example")
 	if resp, _ = browser.Do(req); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("cross-origin delete: %d", resp.StatusCode)
 	}
+	resp, _ = browser.PostForm(e.url+searchPath+"/delete", nil)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("delete: %d", resp.StatusCode)
+	}
 
 	browser.PostForm(e.url+"/logout", nil) //nolint:errcheck
-
-	// Signed out, the pages are public and read-only. A stale cookie reads as
-	// signed out rather than locking them.
-	jar.SetCookies(mustURL(e.url), []*http.Cookie{{Name: auth.SessionCookie, Value: auth.AccessTokenPrefix + "stale"}})
-	anon := page(notePath)
-	if !strings.Contains(anon, "eggs") || !strings.Contains(anon, "Sign in") {
-		t.Fatal("signed-out note page should show the note")
-	}
-	for _, hidden := range []string{"<form", "Delete", "Sign out"} {
-		if strings.Contains(anon, hidden) {
-			t.Errorf("signed-out note page shows %q", hidden)
-		}
-	}
-	resp, _ = browser.PostForm(e.url+notePath+"/delete", nil)
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("signed-out delete: %d", resp.StatusCode)
+	if resp, _ = browser.Get(e.url + "/"); resp.StatusCode != http.StatusSeeOther {
+		t.Fatal("signed out but the index still opens")
 	}
 }
 
@@ -472,24 +476,28 @@ func TestMCPTools(t *testing.T) {
 		t.Fatalf("whoami %+v", who)
 	}
 
-	var created struct{ Note notes.Note }
-	call("create_note", map[string]any{"title": "From Claude", "body": "hi"}, &created)
-	var updated struct{ Note notes.Note }
-	call("update_note", map[string]any{"id": created.Note.ID, "title": "Renamed"}, &updated)
-	if updated.Note.Title != "Renamed" || updated.Note.Body != "hi" {
-		t.Fatalf("update_note: %+v", updated.Note)
+	var created struct{ Search searches.Search }
+	call("create_search", map[string]any{"name": "Rain shell", "query": "arcteryx beta", "maxPriceCents": 20000, "wants": "size M"}, &created)
+	var updated struct{ Search searches.Search }
+	call("update_search", map[string]any{"id": created.Search.ID, "watch": true, "maxPriceCents": 0}, &updated)
+	if !updated.Search.Watch || updated.Search.MaxPriceCents != 0 || updated.Search.Wants != "size M" {
+		t.Fatalf("update_search: %+v", updated.Search)
 	}
-	var list struct{ Notes []notes.Note }
-	call("list_notes", nil, &list)
-	if len(list.Notes) != 1 {
-		t.Fatalf("list_notes: %+v", list)
+	var list struct{ Searches []searches.Search }
+	call("list_searches", nil, &list)
+	if len(list.Searches) != 1 {
+		t.Fatalf("list_searches: %+v", list)
+	}
+	res, err := session.CallTool(ctx, &mcpsdk.CallToolParams{Name: "create_search", Arguments: map[string]any{"name": "x", "query": "y", "conditions": []string{"MINT"}}})
+	if err != nil || !res.IsError {
+		t.Fatalf("a bad condition should come back as a tool error: %v %+v", err, res)
 	}
 	var ok struct{ OK bool }
-	call("delete_note", map[string]any{"id": created.Note.ID}, &ok)
+	call("delete_search", map[string]any{"id": created.Search.ID}, &ok)
 
-	res, err := session.CallTool(ctx, &mcpsdk.CallToolParams{Name: "get_note", Arguments: map[string]any{"id": created.Note.ID}})
+	res, err = session.CallTool(ctx, &mcpsdk.CallToolParams{Name: "get_search", Arguments: map[string]any{"id": created.Search.ID}})
 	if err != nil || !res.IsError {
-		t.Fatalf("a deleted note should come back as a tool error: %v %+v", err, res)
+		t.Fatalf("a deleted search should come back as a tool error: %v %+v", err, res)
 	}
 
 	// Without a credential, MCP is a 401 pointing at OAuth discovery.

@@ -14,7 +14,7 @@ import (
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	dbgen "github.com/KevinMcHugh/mr-ebay/internal/db/gen"
 	"github.com/KevinMcHugh/mr-ebay/internal/server/me"
-	"github.com/KevinMcHugh/mr-ebay/internal/server/notes"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/searches"
 )
 
 // BaseURL is where the API is mounted: the spec's servers entry.
@@ -82,7 +82,7 @@ func (s *Server) Mount(r chi.Router, requireAuth func(http.Handler) http.Handler
 	})
 }
 
-// PublicOperations is the set of operations ("GET /notes/{noteId}") whose
+// PublicOperations is the set of operations ("GET /searches/{searchId}") whose
 // spec entry overrides the global security with an empty list. An operation
 // that does not mention security inherits the global requirement, so a new
 // endpoint is private until the spec says otherwise.
@@ -156,50 +156,50 @@ func (s *Server) GetMe(ctx context.Context, req apigen.GetMeRequestObject) (apig
 }
 
 // -----------------------------------------------------------------------------
-// Notes
+// Searches
 // -----------------------------------------------------------------------------
 
-func (s *Server) ListNotes(ctx context.Context, req apigen.ListNotesRequestObject) (apigen.ListNotesResponseObject, error) {
-	return Run(ctx, notes.ListEndpoint{Store: s.store, Links: s.links}, req)
+func (s *Server) ListSearches(ctx context.Context, req apigen.ListSearchesRequestObject) (apigen.ListSearchesResponseObject, error) {
+	return Run(ctx, searches.ListEndpoint{Store: s.store, Links: s.links}, req)
 }
 
-func (s *Server) GetNote(ctx context.Context, req apigen.GetNoteRequestObject) (apigen.GetNoteResponseObject, error) {
-	resp, err := Run(ctx, notes.GetEndpoint{Store: s.store, Links: s.links}, req)
+func (s *Server) GetSearch(ctx context.Context, req apigen.GetSearchRequestObject) (apigen.GetSearchResponseObject, error) {
+	resp, err := Run(ctx, searches.GetEndpoint{Store: s.store, Links: s.links}, req)
 	if isNotFound(err) {
-		return apigen.GetNote404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
+		return apigen.GetSearch404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
 	}
 	return resp, err
 }
 
-func (s *Server) CreateNote(ctx context.Context, req apigen.CreateNoteRequestObject) (apigen.CreateNoteResponseObject, error) {
+func (s *Server) CreateSearch(ctx context.Context, req apigen.CreateSearchRequestObject) (apigen.CreateSearchResponseObject, error) {
 	if req.Body == nil {
-		return apigen.CreateNote400JSONResponse{BadRequestJSONResponse: bodyRequired()}, nil
+		return apigen.CreateSearch400JSONResponse{BadRequestJSONResponse: bodyRequired()}, nil
 	}
-	resp, err := Run(ctx, notes.CreateEndpoint{Store: s.store, Links: s.links}, req)
+	resp, err := Run(ctx, searches.CreateEndpoint{Store: s.store, Links: s.links}, req)
 	if isUnprocessable(err) {
-		return apigen.CreateNote422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
+		return apigen.CreateSearch422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
 	}
 	return resp, err
 }
 
-func (s *Server) UpdateNote(ctx context.Context, req apigen.UpdateNoteRequestObject) (apigen.UpdateNoteResponseObject, error) {
+func (s *Server) UpdateSearch(ctx context.Context, req apigen.UpdateSearchRequestObject) (apigen.UpdateSearchResponseObject, error) {
 	if req.Body == nil {
-		return apigen.UpdateNote400JSONResponse{BadRequestJSONResponse: bodyRequired()}, nil
+		return apigen.UpdateSearch400JSONResponse{BadRequestJSONResponse: bodyRequired()}, nil
 	}
-	resp, err := Run(ctx, notes.UpdateEndpoint{Store: s.store, Links: s.links}, req)
+	resp, err := Run(ctx, searches.UpdateEndpoint{Store: s.store, Links: s.links}, req)
 	switch {
 	case isNotFound(err):
-		return apigen.UpdateNote404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
+		return apigen.UpdateSearch404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
 	case isUnprocessable(err):
-		return apigen.UpdateNote422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
+		return apigen.UpdateSearch422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
 	}
 	return resp, err
 }
 
-func (s *Server) DeleteNote(ctx context.Context, req apigen.DeleteNoteRequestObject) (apigen.DeleteNoteResponseObject, error) {
-	resp, err := Run(ctx, notes.DeleteEndpoint{Store: s.store}, req)
+func (s *Server) DeleteSearch(ctx context.Context, req apigen.DeleteSearchRequestObject) (apigen.DeleteSearchResponseObject, error) {
+	resp, err := Run(ctx, searches.DeleteEndpoint{Store: s.store}, req)
 	if isNotFound(err) {
-		return apigen.DeleteNote404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
+		return apigen.DeleteSearch404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
 	}
 	return resp, err
 }

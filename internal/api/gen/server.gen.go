@@ -34,37 +34,90 @@ type Me struct {
 	Name string `json:"name"`
 }
 
-// Note defines model for Note.
-type Note struct {
-	Body      string    `json:"body"`
-	CreatedAt time.Time `json:"createdAt"`
-	Id        string    `json:"id"`
-	Title     string    `json:"title"`
+// Search defines model for Search.
+type Search struct {
+	// AlertBelowCents A watched search alerts on matches at or below this total. Omitted to alert on every new match.
+	AlertBelowCents int64 `json:"alertBelowCents,omitempty"`
+
+	// BuyingOptions Any of FIXED_PRICE, AUCTION, BEST_OFFER; empty for any.
+	BuyingOptions []string `json:"buyingOptions"`
+	CategoryIds   []string `json:"categoryIds"`
+
+	// Conditions Any of NEW, USED, UNSPECIFIED; empty for any condition.
+	Conditions  []string   `json:"conditions"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	Currency    string     `json:"currency"`
+	Id          string     `json:"id"`
+	LastRunAt   *time.Time `json:"lastRunAt,omitempty"`
+	Marketplace string     `json:"marketplace"`
+
+	// MaxPriceCents Omitted when there is no maximum.
+	MaxPriceCents int64 `json:"maxPriceCents,omitempty"`
+
+	// MinPriceCents Omitted when there is no minimum.
+	MinPriceCents int64  `json:"minPriceCents,omitempty"`
+	Name          string `json:"name"`
+
+	// NewCount Matches not yet looked at.
+	NewCount int `json:"newCount"`
+
+	// Query eBay keywords.
+	Query     string    `json:"query"`
 	UpdatedAt time.Time `json:"updatedAt"`
 
-	// Url The note's web page.
+	// Url The search's web page.
 	Url string `json:"url"`
+
+	// Wants What you are after, in words, for the judgment calls a filter cannot make.
+	Wants string `json:"wants"`
+
+	// Watch Run unattended on the watch schedule.
+	Watch bool `json:"watch"`
 }
 
-// NoteCreate defines model for NoteCreate.
-type NoteCreate struct {
-	Body  string `json:"body,omitempty"`
-	Title string `json:"title"`
+// SearchCreate Prices are in cents of currency; 0 or omitted means no limit.
+type SearchCreate struct {
+	AlertBelowCents int64    `json:"alertBelowCents,omitempty"`
+	BuyingOptions   []string `json:"buyingOptions,omitempty"`
+	CategoryIds     []string `json:"categoryIds,omitempty"`
+	Conditions      []string `json:"conditions,omitempty"`
+
+	// Currency Default USD.
+	Currency string `json:"currency,omitempty"`
+
+	// Marketplace Default EBAY_US.
+	Marketplace   string `json:"marketplace,omitempty"`
+	MaxPriceCents int64  `json:"maxPriceCents,omitempty"`
+	MinPriceCents int64  `json:"minPriceCents,omitempty"`
+	Name          string `json:"name"`
+	Query         string `json:"query"`
+	Wants         string `json:"wants,omitempty"`
+	Watch         bool   `json:"watch,omitempty"`
 }
 
-// NoteList defines model for NoteList.
-type NoteList struct {
-	Notes []Note `json:"notes"`
+// SearchList defines model for SearchList.
+type SearchList struct {
+	Searches []Search `json:"searches"`
 }
 
-// NoteUpdate Fields left out are left alone.
-type NoteUpdate struct {
-	Body  *string `json:"body,omitempty"`
-	Title *string `json:"title,omitempty"`
+// SearchUpdate Fields left out are left alone. A price of 0 removes that limit.
+type SearchUpdate struct {
+	AlertBelowCents *int64    `json:"alertBelowCents,omitempty"`
+	BuyingOptions   *[]string `json:"buyingOptions,omitempty"`
+	CategoryIds     *[]string `json:"categoryIds,omitempty"`
+	Conditions      *[]string `json:"conditions,omitempty"`
+	Currency        *string   `json:"currency,omitempty"`
+	Marketplace     *string   `json:"marketplace,omitempty"`
+	MaxPriceCents   *int64    `json:"maxPriceCents,omitempty"`
+	MinPriceCents   *int64    `json:"minPriceCents,omitempty"`
+	Name            *string   `json:"name,omitempty"`
+	Query           *string   `json:"query,omitempty"`
+	Wants           *string   `json:"wants,omitempty"`
+	Watch           *bool     `json:"watch,omitempty"`
 }
 
-// NoteId defines model for NoteId.
-type NoteId = string
+// SearchId defines model for SearchId.
+type SearchId = string
 
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
@@ -75,32 +128,32 @@ type NotFound = Error
 // Unprocessable defines model for Unprocessable.
 type Unprocessable = Error
 
-// CreateNoteJSONRequestBody defines body for CreateNote for application/json ContentType.
-type CreateNoteJSONRequestBody = NoteCreate
+// CreateSearchJSONRequestBody defines body for CreateSearch for application/json ContentType.
+type CreateSearchJSONRequestBody = SearchCreate
 
-// UpdateNoteJSONRequestBody defines body for UpdateNote for application/json ContentType.
-type UpdateNoteJSONRequestBody = NoteUpdate
+// UpdateSearchJSONRequestBody defines body for UpdateSearch for application/json ContentType.
+type UpdateSearchJSONRequestBody = SearchUpdate
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// GetMe The api key this request acts as
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
-	// ListNotes List notes, newest first
-	// (GET /notes)
-	ListNotes(w http.ResponseWriter, r *http.Request)
-	// CreateNote Create a note
-	// (POST /notes)
-	CreateNote(w http.ResponseWriter, r *http.Request)
-	// DeleteNote Delete a note
-	// (DELETE /notes/{noteId})
-	DeleteNote(w http.ResponseWriter, r *http.Request, noteId NoteId)
-	// GetNote One note
-	// (GET /notes/{noteId})
-	GetNote(w http.ResponseWriter, r *http.Request, noteId NoteId)
-	// UpdateNote Change a note's title, body, or both
-	// (PATCH /notes/{noteId})
-	UpdateNote(w http.ResponseWriter, r *http.Request, noteId NoteId)
+	// ListSearches List saved searches, newest first
+	// (GET /searches)
+	ListSearches(w http.ResponseWriter, r *http.Request)
+	// CreateSearch Save a search
+	// (POST /searches)
+	CreateSearch(w http.ResponseWriter, r *http.Request)
+	// DeleteSearch Delete a saved search
+	// (DELETE /searches/{searchId})
+	DeleteSearch(w http.ResponseWriter, r *http.Request, searchId SearchId)
+	// GetSearch One saved search
+	// (GET /searches/{searchId})
+	GetSearch(w http.ResponseWriter, r *http.Request, searchId SearchId)
+	// UpdateSearch Change a saved search
+	// (PATCH /searches/{searchId})
+	UpdateSearch(w http.ResponseWriter, r *http.Request, searchId SearchId)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -113,33 +166,33 @@ func (_ Unimplemented) GetMe(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// ListNotes List notes, newest first
-// (GET /notes)
-func (_ Unimplemented) ListNotes(w http.ResponseWriter, r *http.Request) {
+// ListSearches List saved searches, newest first
+// (GET /searches)
+func (_ Unimplemented) ListSearches(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// CreateNote Create a note
-// (POST /notes)
-func (_ Unimplemented) CreateNote(w http.ResponseWriter, r *http.Request) {
+// CreateSearch Save a search
+// (POST /searches)
+func (_ Unimplemented) CreateSearch(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// DeleteNote Delete a note
-// (DELETE /notes/{noteId})
-func (_ Unimplemented) DeleteNote(w http.ResponseWriter, r *http.Request, noteId NoteId) {
+// DeleteSearch Delete a saved search
+// (DELETE /searches/{searchId})
+func (_ Unimplemented) DeleteSearch(w http.ResponseWriter, r *http.Request, searchId SearchId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// GetNote One note
-// (GET /notes/{noteId})
-func (_ Unimplemented) GetNote(w http.ResponseWriter, r *http.Request, noteId NoteId) {
+// GetSearch One saved search
+// (GET /searches/{searchId})
+func (_ Unimplemented) GetSearch(w http.ResponseWriter, r *http.Request, searchId SearchId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// UpdateNote Change a note's title, body, or both
-// (PATCH /notes/{noteId})
-func (_ Unimplemented) UpdateNote(w http.ResponseWriter, r *http.Request, noteId NoteId) {
+// UpdateSearch Change a saved search
+// (PATCH /searches/{searchId})
+func (_ Unimplemented) UpdateSearch(w http.ResponseWriter, r *http.Request, searchId SearchId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -166,11 +219,11 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 	handler.ServeHTTP(w, r)
 }
 
-// ListNotes operation middleware
-func (siw *ServerInterfaceWrapper) ListNotes(w http.ResponseWriter, r *http.Request) {
+// ListSearches operation middleware
+func (siw *ServerInterfaceWrapper) ListSearches(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListNotes(w, r)
+		siw.Handler.ListSearches(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -180,11 +233,11 @@ func (siw *ServerInterfaceWrapper) ListNotes(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
-// CreateNote operation middleware
-func (siw *ServerInterfaceWrapper) CreateNote(w http.ResponseWriter, r *http.Request) {
+// CreateSearch operation middleware
+func (siw *ServerInterfaceWrapper) CreateSearch(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateNote(w, r)
+		siw.Handler.CreateSearch(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -194,23 +247,23 @@ func (siw *ServerInterfaceWrapper) CreateNote(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
-// DeleteNote operation middleware
-func (siw *ServerInterfaceWrapper) DeleteNote(w http.ResponseWriter, r *http.Request) {
+// DeleteSearch operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSearch(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "noteId" -------------
-	var noteId NoteId
+	// ------------- Path parameter "searchId" -------------
+	var searchId SearchId
 
-	err = runtime.BindStyledParameterWithOptions("simple", "noteId", chi.URLParam(r, "noteId"), &noteId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	err = runtime.BindStyledParameterWithOptions("simple", "searchId", chi.URLParam(r, "searchId"), &searchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "noteId", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "searchId", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteNote(w, r, noteId)
+		siw.Handler.DeleteSearch(w, r, searchId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -220,23 +273,23 @@ func (siw *ServerInterfaceWrapper) DeleteNote(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
-// GetNote operation middleware
-func (siw *ServerInterfaceWrapper) GetNote(w http.ResponseWriter, r *http.Request) {
+// GetSearch operation middleware
+func (siw *ServerInterfaceWrapper) GetSearch(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "noteId" -------------
-	var noteId NoteId
+	// ------------- Path parameter "searchId" -------------
+	var searchId SearchId
 
-	err = runtime.BindStyledParameterWithOptions("simple", "noteId", chi.URLParam(r, "noteId"), &noteId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	err = runtime.BindStyledParameterWithOptions("simple", "searchId", chi.URLParam(r, "searchId"), &searchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "noteId", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "searchId", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetNote(w, r, noteId)
+		siw.Handler.GetSearch(w, r, searchId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -246,23 +299,23 @@ func (siw *ServerInterfaceWrapper) GetNote(w http.ResponseWriter, r *http.Reques
 	handler.ServeHTTP(w, r)
 }
 
-// UpdateNote operation middleware
-func (siw *ServerInterfaceWrapper) UpdateNote(w http.ResponseWriter, r *http.Request) {
+// UpdateSearch operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSearch(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "noteId" -------------
-	var noteId NoteId
+	// ------------- Path parameter "searchId" -------------
+	var searchId SearchId
 
-	err = runtime.BindStyledParameterWithOptions("simple", "noteId", chi.URLParam(r, "noteId"), &noteId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	err = runtime.BindStyledParameterWithOptions("simple", "searchId", chi.URLParam(r, "searchId"), &searchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "noteId", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "searchId", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateNote(w, r, noteId)
+		siw.Handler.UpdateSearch(w, r, searchId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -389,19 +442,19 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/me", wrapper.GetMe)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/notes", wrapper.ListNotes)
+		r.Get(options.BaseURL+"/searches", wrapper.ListSearches)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/notes", wrapper.CreateNote)
+		r.Post(options.BaseURL+"/searches", wrapper.CreateSearch)
 	})
 	r.Group(func(r chi.Router) {
-		r.Delete(options.BaseURL+"/notes/{noteId}", wrapper.DeleteNote)
+		r.Delete(options.BaseURL+"/searches/{searchId}", wrapper.DeleteSearch)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/notes/{noteId}", wrapper.GetNote)
+		r.Get(options.BaseURL+"/searches/{searchId}", wrapper.GetSearch)
 	})
 	r.Group(func(r chi.Router) {
-		r.Patch(options.BaseURL+"/notes/{noteId}", wrapper.UpdateNote)
+		r.Patch(options.BaseURL+"/searches/{searchId}", wrapper.UpdateSearch)
 	})
 
 	return r
@@ -447,16 +500,16 @@ func (response GetMe401TextResponse) VisitGetMeResponse(w http.ResponseWriter) e
 	return err
 }
 
-type ListNotesRequestObject struct {
+type ListSearchesRequestObject struct {
 }
 
-type ListNotesResponseObject interface {
-	VisitListNotesResponse(w http.ResponseWriter) error
+type ListSearchesResponseObject interface {
+	VisitListSearchesResponse(w http.ResponseWriter) error
 }
 
-type ListNotes200JSONResponse NoteList
+type ListSearches200JSONResponse SearchList
 
-func (response ListNotes200JSONResponse) VisitListNotesResponse(w http.ResponseWriter) error {
+func (response ListSearches200JSONResponse) VisitListSearchesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -468,17 +521,28 @@ func (response ListNotes200JSONResponse) VisitListNotesResponse(w http.ResponseW
 	return err
 }
 
-type CreateNoteRequestObject struct {
-	Body *CreateNoteJSONRequestBody
+type ListSearches401TextResponse UnauthorizedTextResponse
+
+func (response ListSearches401TextResponse) VisitListSearchesResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(401)
+
+	_, err := w.Write([]byte(fmt.Sprint(response)))
+	return err
 }
 
-type CreateNoteResponseObject interface {
-	VisitCreateNoteResponse(w http.ResponseWriter) error
+type CreateSearchRequestObject struct {
+	Body *CreateSearchJSONRequestBody
 }
 
-type CreateNote201JSONResponse Note
+type CreateSearchResponseObject interface {
+	VisitCreateSearchResponse(w http.ResponseWriter) error
+}
 
-func (response CreateNote201JSONResponse) VisitCreateNoteResponse(w http.ResponseWriter) error {
+type CreateSearch201JSONResponse Search
+
+func (response CreateSearch201JSONResponse) VisitCreateSearchResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -490,9 +554,9 @@ func (response CreateNote201JSONResponse) VisitCreateNoteResponse(w http.Respons
 	return err
 }
 
-type CreateNote400JSONResponse struct{ BadRequestJSONResponse }
+type CreateSearch400JSONResponse struct{ BadRequestJSONResponse }
 
-func (response CreateNote400JSONResponse) VisitCreateNoteResponse(w http.ResponseWriter) error {
+func (response CreateSearch400JSONResponse) VisitCreateSearchResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -504,9 +568,9 @@ func (response CreateNote400JSONResponse) VisitCreateNoteResponse(w http.Respons
 	return err
 }
 
-type CreateNote401TextResponse UnauthorizedTextResponse
+type CreateSearch401TextResponse UnauthorizedTextResponse
 
-func (response CreateNote401TextResponse) VisitCreateNoteResponse(w http.ResponseWriter) error {
+func (response CreateSearch401TextResponse) VisitCreateSearchResponse(w http.ResponseWriter) error {
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(401)
@@ -515,9 +579,9 @@ func (response CreateNote401TextResponse) VisitCreateNoteResponse(w http.Respons
 	return err
 }
 
-type CreateNote422JSONResponse struct{ UnprocessableJSONResponse }
+type CreateSearch422JSONResponse struct{ UnprocessableJSONResponse }
 
-func (response CreateNote422JSONResponse) VisitCreateNoteResponse(w http.ResponseWriter) error {
+func (response CreateSearch422JSONResponse) VisitCreateSearchResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -529,25 +593,25 @@ func (response CreateNote422JSONResponse) VisitCreateNoteResponse(w http.Respons
 	return err
 }
 
-type DeleteNoteRequestObject struct {
-	NoteId NoteId `json:"noteId"`
+type DeleteSearchRequestObject struct {
+	SearchId SearchId `json:"searchId"`
 }
 
-type DeleteNoteResponseObject interface {
-	VisitDeleteNoteResponse(w http.ResponseWriter) error
+type DeleteSearchResponseObject interface {
+	VisitDeleteSearchResponse(w http.ResponseWriter) error
 }
 
-type DeleteNote204Response struct {
+type DeleteSearch204Response struct {
 }
 
-func (response DeleteNote204Response) VisitDeleteNoteResponse(w http.ResponseWriter) error {
+func (response DeleteSearch204Response) VisitDeleteSearchResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
 	return nil
 }
 
-type DeleteNote401TextResponse UnauthorizedTextResponse
+type DeleteSearch401TextResponse UnauthorizedTextResponse
 
-func (response DeleteNote401TextResponse) VisitDeleteNoteResponse(w http.ResponseWriter) error {
+func (response DeleteSearch401TextResponse) VisitDeleteSearchResponse(w http.ResponseWriter) error {
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(401)
@@ -556,45 +620,9 @@ func (response DeleteNote401TextResponse) VisitDeleteNoteResponse(w http.Respons
 	return err
 }
 
-type DeleteNote404JSONResponse struct{ NotFoundJSONResponse }
+type DeleteSearch404JSONResponse struct{ NotFoundJSONResponse }
 
-func (response DeleteNote404JSONResponse) VisitDeleteNoteResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetNoteRequestObject struct {
-	NoteId NoteId `json:"noteId"`
-}
-
-type GetNoteResponseObject interface {
-	VisitGetNoteResponse(w http.ResponseWriter) error
-}
-
-type GetNote200JSONResponse Note
-
-func (response GetNote200JSONResponse) VisitGetNoteResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetNote404JSONResponse struct{ NotFoundJSONResponse }
-
-func (response GetNote404JSONResponse) VisitGetNoteResponse(w http.ResponseWriter) error {
+func (response DeleteSearch404JSONResponse) VisitDeleteSearchResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -606,18 +634,17 @@ func (response GetNote404JSONResponse) VisitGetNoteResponse(w http.ResponseWrite
 	return err
 }
 
-type UpdateNoteRequestObject struct {
-	NoteId NoteId `json:"noteId"`
-	Body   *UpdateNoteJSONRequestBody
+type GetSearchRequestObject struct {
+	SearchId SearchId `json:"searchId"`
 }
 
-type UpdateNoteResponseObject interface {
-	VisitUpdateNoteResponse(w http.ResponseWriter) error
+type GetSearchResponseObject interface {
+	VisitGetSearchResponse(w http.ResponseWriter) error
 }
 
-type UpdateNote200JSONResponse Note
+type GetSearch200JSONResponse Search
 
-func (response UpdateNote200JSONResponse) VisitUpdateNoteResponse(w http.ResponseWriter) error {
+func (response GetSearch200JSONResponse) VisitGetSearchResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -629,9 +656,57 @@ func (response UpdateNote200JSONResponse) VisitUpdateNoteResponse(w http.Respons
 	return err
 }
 
-type UpdateNote400JSONResponse struct{ BadRequestJSONResponse }
+type GetSearch401TextResponse UnauthorizedTextResponse
 
-func (response UpdateNote400JSONResponse) VisitUpdateNoteResponse(w http.ResponseWriter) error {
+func (response GetSearch401TextResponse) VisitGetSearchResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(401)
+
+	_, err := w.Write([]byte(fmt.Sprint(response)))
+	return err
+}
+
+type GetSearch404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetSearch404JSONResponse) VisitGetSearchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSearchRequestObject struct {
+	SearchId SearchId `json:"searchId"`
+	Body     *UpdateSearchJSONRequestBody
+}
+
+type UpdateSearchResponseObject interface {
+	VisitUpdateSearchResponse(w http.ResponseWriter) error
+}
+
+type UpdateSearch200JSONResponse Search
+
+func (response UpdateSearch200JSONResponse) VisitUpdateSearchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSearch400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateSearch400JSONResponse) VisitUpdateSearchResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -643,9 +718,9 @@ func (response UpdateNote400JSONResponse) VisitUpdateNoteResponse(w http.Respons
 	return err
 }
 
-type UpdateNote401TextResponse UnauthorizedTextResponse
+type UpdateSearch401TextResponse UnauthorizedTextResponse
 
-func (response UpdateNote401TextResponse) VisitUpdateNoteResponse(w http.ResponseWriter) error {
+func (response UpdateSearch401TextResponse) VisitUpdateSearchResponse(w http.ResponseWriter) error {
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(401)
@@ -654,9 +729,9 @@ func (response UpdateNote401TextResponse) VisitUpdateNoteResponse(w http.Respons
 	return err
 }
 
-type UpdateNote404JSONResponse struct{ NotFoundJSONResponse }
+type UpdateSearch404JSONResponse struct{ NotFoundJSONResponse }
 
-func (response UpdateNote404JSONResponse) VisitUpdateNoteResponse(w http.ResponseWriter) error {
+func (response UpdateSearch404JSONResponse) VisitUpdateSearchResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -668,9 +743,9 @@ func (response UpdateNote404JSONResponse) VisitUpdateNoteResponse(w http.Respons
 	return err
 }
 
-type UpdateNote422JSONResponse struct{ UnprocessableJSONResponse }
+type UpdateSearch422JSONResponse struct{ UnprocessableJSONResponse }
 
-func (response UpdateNote422JSONResponse) VisitUpdateNoteResponse(w http.ResponseWriter) error {
+func (response UpdateSearch422JSONResponse) VisitUpdateSearchResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -687,21 +762,21 @@ type StrictServerInterface interface {
 	// GetMe The api key this request acts as
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
-	// ListNotes List notes, newest first
-	// (GET /notes)
-	ListNotes(ctx context.Context, request ListNotesRequestObject) (ListNotesResponseObject, error)
-	// CreateNote Create a note
-	// (POST /notes)
-	CreateNote(ctx context.Context, request CreateNoteRequestObject) (CreateNoteResponseObject, error)
-	// DeleteNote Delete a note
-	// (DELETE /notes/{noteId})
-	DeleteNote(ctx context.Context, request DeleteNoteRequestObject) (DeleteNoteResponseObject, error)
-	// GetNote One note
-	// (GET /notes/{noteId})
-	GetNote(ctx context.Context, request GetNoteRequestObject) (GetNoteResponseObject, error)
-	// UpdateNote Change a note's title, body, or both
-	// (PATCH /notes/{noteId})
-	UpdateNote(ctx context.Context, request UpdateNoteRequestObject) (UpdateNoteResponseObject, error)
+	// ListSearches List saved searches, newest first
+	// (GET /searches)
+	ListSearches(ctx context.Context, request ListSearchesRequestObject) (ListSearchesResponseObject, error)
+	// CreateSearch Save a search
+	// (POST /searches)
+	CreateSearch(ctx context.Context, request CreateSearchRequestObject) (CreateSearchResponseObject, error)
+	// DeleteSearch Delete a saved search
+	// (DELETE /searches/{searchId})
+	DeleteSearch(ctx context.Context, request DeleteSearchRequestObject) (DeleteSearchResponseObject, error)
+	// GetSearch One saved search
+	// (GET /searches/{searchId})
+	GetSearch(ctx context.Context, request GetSearchRequestObject) (GetSearchResponseObject, error)
+	// UpdateSearch Change a saved search
+	// (PATCH /searches/{searchId})
+	UpdateSearch(ctx context.Context, request UpdateSearchRequestObject) (UpdateSearchResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -767,23 +842,23 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ListNotes operation middleware
-func (sh *strictHandler) ListNotes(w http.ResponseWriter, r *http.Request) {
-	var request ListNotesRequestObject
+// ListSearches operation middleware
+func (sh *strictHandler) ListSearches(w http.ResponseWriter, r *http.Request) {
+	var request ListSearchesRequestObject
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ListNotes(ctx, request.(ListNotesRequestObject))
+		return sh.ssi.ListSearches(ctx, request.(ListSearchesRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListNotes")
+		handler = middleware(handler, "ListSearches")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ListNotesResponseObject); ok {
-		if err := validResponse.VisitListNotesResponse(w); err != nil {
+	} else if validResponse, ok := response.(ListSearchesResponseObject); ok {
+		if err := validResponse.VisitListSearchesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -791,11 +866,11 @@ func (sh *strictHandler) ListNotes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// CreateNote operation middleware
-func (sh *strictHandler) CreateNote(w http.ResponseWriter, r *http.Request) {
-	var request CreateNoteRequestObject
+// CreateSearch operation middleware
+func (sh *strictHandler) CreateSearch(w http.ResponseWriter, r *http.Request) {
+	var request CreateSearchRequestObject
 
-	var body CreateNoteJSONRequestBody
+	var body CreateSearchJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
 		return
@@ -803,18 +878,18 @@ func (sh *strictHandler) CreateNote(w http.ResponseWriter, r *http.Request) {
 	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.CreateNote(ctx, request.(CreateNoteRequestObject))
+		return sh.ssi.CreateSearch(ctx, request.(CreateSearchRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CreateNote")
+		handler = middleware(handler, "CreateSearch")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(CreateNoteResponseObject); ok {
-		if err := validResponse.VisitCreateNoteResponse(w); err != nil {
+	} else if validResponse, ok := response.(CreateSearchResponseObject); ok {
+		if err := validResponse.VisitCreateSearchResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -822,25 +897,25 @@ func (sh *strictHandler) CreateNote(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// DeleteNote operation middleware
-func (sh *strictHandler) DeleteNote(w http.ResponseWriter, r *http.Request, noteId NoteId) {
-	var request DeleteNoteRequestObject
+// DeleteSearch operation middleware
+func (sh *strictHandler) DeleteSearch(w http.ResponseWriter, r *http.Request, searchId SearchId) {
+	var request DeleteSearchRequestObject
 
-	request.NoteId = noteId
+	request.SearchId = searchId
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.DeleteNote(ctx, request.(DeleteNoteRequestObject))
+		return sh.ssi.DeleteSearch(ctx, request.(DeleteSearchRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "DeleteNote")
+		handler = middleware(handler, "DeleteSearch")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(DeleteNoteResponseObject); ok {
-		if err := validResponse.VisitDeleteNoteResponse(w); err != nil {
+	} else if validResponse, ok := response.(DeleteSearchResponseObject); ok {
+		if err := validResponse.VisitDeleteSearchResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -848,25 +923,25 @@ func (sh *strictHandler) DeleteNote(w http.ResponseWriter, r *http.Request, note
 	}
 }
 
-// GetNote operation middleware
-func (sh *strictHandler) GetNote(w http.ResponseWriter, r *http.Request, noteId NoteId) {
-	var request GetNoteRequestObject
+// GetSearch operation middleware
+func (sh *strictHandler) GetSearch(w http.ResponseWriter, r *http.Request, searchId SearchId) {
+	var request GetSearchRequestObject
 
-	request.NoteId = noteId
+	request.SearchId = searchId
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetNote(ctx, request.(GetNoteRequestObject))
+		return sh.ssi.GetSearch(ctx, request.(GetSearchRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetNote")
+		handler = middleware(handler, "GetSearch")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetNoteResponseObject); ok {
-		if err := validResponse.VisitGetNoteResponse(w); err != nil {
+	} else if validResponse, ok := response.(GetSearchResponseObject); ok {
+		if err := validResponse.VisitGetSearchResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -874,13 +949,13 @@ func (sh *strictHandler) GetNote(w http.ResponseWriter, r *http.Request, noteId 
 	}
 }
 
-// UpdateNote operation middleware
-func (sh *strictHandler) UpdateNote(w http.ResponseWriter, r *http.Request, noteId NoteId) {
-	var request UpdateNoteRequestObject
+// UpdateSearch operation middleware
+func (sh *strictHandler) UpdateSearch(w http.ResponseWriter, r *http.Request, searchId SearchId) {
+	var request UpdateSearchRequestObject
 
-	request.NoteId = noteId
+	request.SearchId = searchId
 
-	var body UpdateNoteJSONRequestBody
+	var body UpdateSearchJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
 		return
@@ -888,18 +963,18 @@ func (sh *strictHandler) UpdateNote(w http.ResponseWriter, r *http.Request, note
 	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.UpdateNote(ctx, request.(UpdateNoteRequestObject))
+		return sh.ssi.UpdateSearch(ctx, request.(UpdateSearchRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "UpdateNote")
+		handler = middleware(handler, "UpdateSearch")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(UpdateNoteResponseObject); ok {
-		if err := validResponse.VisitUpdateNoteResponse(w); err != nil {
+	} else if validResponse, ok := response.(UpdateSearchResponseObject); ok {
+		if err := validResponse.VisitUpdateSearchResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -912,28 +987,38 @@ func (sh *strictHandler) UpdateNote(w http.ResponseWriter, r *http.Request, note
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

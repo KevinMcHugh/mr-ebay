@@ -30,14 +30,40 @@ type Invite struct {
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
-type Note struct {
-	ID        string             `json:"id"`
-	Title     string             `json:"title"`
-	Body      string             `json:"body"`
-	CreatedBy *string            `json:"created_by"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+type Listing struct {
+	ID                string             `json:"id"`
+	EbayItemID        string             `json:"ebay_item_id"`
+	Marketplace       string             `json:"marketplace"`
+	Title             string             `json:"title"`
+	Url               string             `json:"url"`
+	ImageUrl          string             `json:"image_url"`
+	Seller            string             `json:"seller"`
+	SellerFeedbackPct *float64           `json:"seller_feedback_pct"`
+	Condition         string             `json:"condition"`
+	BuyingOptions     []string           `json:"buying_options"`
+	PriceCents        int64              `json:"price_cents"`
+	ShippingCents     *int64             `json:"shipping_cents"`
+	Currency          string             `json:"currency"`
+	EndsAt            pgtype.Timestamptz `json:"ends_at"`
+	FirstSeenAt       pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt        pgtype.Timestamptz `json:"last_seen_at"`
+	Data              []byte             `json:"data"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type Match struct {
+	ID          string             `json:"id"`
+	SearchID    string             `json:"search_id"`
+	ListingID   string             `json:"listing_id"`
+	Status      string             `json:"status"`
+	FirstSeenAt pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt  pgtype.Timestamptz `json:"last_seen_at"`
+	AlertedAt   pgtype.Timestamptz `json:"alerted_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type OauthClient struct {
@@ -72,4 +98,46 @@ type OauthToken struct {
 	RefreshExpiresAt pgtype.Timestamptz `json:"refresh_expires_at"`
 	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type PricePoint struct {
+	ID            string             `json:"id"`
+	ListingID     string             `json:"listing_id"`
+	PriceCents    int64              `json:"price_cents"`
+	ShippingCents *int64             `json:"shipping_cents"`
+	Currency      string             `json:"currency"`
+	ObservedAt    pgtype.Timestamptz `json:"observed_at"`
+}
+
+type Search struct {
+	ID              string             `json:"id"`
+	Name            string             `json:"name"`
+	Query           string             `json:"query"`
+	CategoryIds     []string           `json:"category_ids"`
+	Conditions      []string           `json:"conditions"`
+	BuyingOptions   []string           `json:"buying_options"`
+	MinPriceCents   *int64             `json:"min_price_cents"`
+	MaxPriceCents   *int64             `json:"max_price_cents"`
+	Currency        string             `json:"currency"`
+	Marketplace     string             `json:"marketplace"`
+	Wants           string             `json:"wants"`
+	Watch           bool               `json:"watch"`
+	AlertBelowCents *int64             `json:"alert_below_cents"`
+	LastRunAt       pgtype.Timestamptz `json:"last_run_at"`
+	CreatedBy       *string            `json:"created_by"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type SearchRun struct {
+	ID             string             `json:"id"`
+	SearchID       string             `json:"search_id"`
+	Trigger        string             `json:"trigger"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	FinishedAt     pgtype.Timestamptz `json:"finished_at"`
+	ResultCount    int32              `json:"result_count"`
+	NewCount       int32              `json:"new_count"`
+	PriceDropCount int32              `json:"price_drop_count"`
+	Error          string             `json:"error"`
 }

@@ -1,0 +1,33 @@
+{{define "title"}}{{.Search.Name}} · {{.AppName}}{{end}}
+{{define "content"}}
+<p><a href="/">← All searches</a></p>
+<h1>{{.Search.Name}}</h1>
+<p class="muted row" style="font-size:.85rem">
+  {{if .Search.Watch}}<span class="tag on">watching</span>{{end}}
+  <span>{{if .Search.LastRunAt}}Last run {{.Search.LastRunAt.Format "2006-01-02 15:04"}}{{else}}Never run{{end}}</span>
+  <code class="id" title="Click to select. This is the id the MCP tools take.">{{.Search.ID}}</code>
+</p>
+<div class="panel">
+  <dl class="facts">
+    <dt>Keywords</dt><dd>{{.Search.Query}}</dd>
+    <dt>Price</dt><dd>{{if .Search.MinPriceCents}}from {{money .Search.MinPriceCents .Search.Currency}} {{end}}{{if .Search.MaxPriceCents}}up to {{money .Search.MaxPriceCents .Search.Currency}}{{end}}{{if not (or .Search.MinPriceCents .Search.MaxPriceCents)}}any{{end}}</dd>
+    <dt>Condition</dt><dd>{{if .Search.Conditions}}{{join .Search.Conditions ", "}}{{else}}any{{end}}</dd>
+    <dt>Buying</dt><dd>{{if .Search.BuyingOptions}}{{join .Search.BuyingOptions ", "}}{{else}}any{{end}}</dd>
+    {{if .Search.CategoryIDs}}<dt>Categories</dt><dd>{{join .Search.CategoryIDs ", "}}</dd>{{end}}
+    <dt>Marketplace</dt><dd>{{.Search.Marketplace}}</dd>
+    {{if .Search.Watch}}<dt>Alerts</dt><dd>{{if .Search.AlertBelowCents}}at or below {{money .Search.AlertBelowCents .Search.Currency}}{{else}}every new match{{end}}</dd>{{end}}
+  </dl>
+  {{if .Search.Wants}}<div class="body">{{.Search.Wants}}</div>{{end}}
+</div>
+<p class="muted">Matches show here once searches run against eBay (docs/design.md).</p>
+<details class="panel">
+  <summary>Edit</summary>
+  <form method="POST" action="/searches/{{.Search.ID}}" class="stack" style="margin-top:.75rem">
+    {{template "searchFields" .Form}}
+    <div><button type="submit">Save</button></div>
+  </form>
+</details>
+<form method="POST" action="/searches/{{.Search.ID}}/delete" class="inline">
+  <button class="danger" type="submit">Delete</button>
+</form>
+{{end}}

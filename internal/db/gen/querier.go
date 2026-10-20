@@ -13,33 +13,36 @@ type Querier interface {
 	// code cannot both succeed.
 	ClaimInviteByHash(ctx context.Context, codeHash string) (Invite, error)
 	ConsumeOAuthCode(ctx context.Context, codeHash string) (OauthCode, error)
+	CountNewMatches(ctx context.Context, searchID string) (int32, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
 	CreateInvite(ctx context.Context, arg CreateInviteParams) (Invite, error)
-	CreateNote(ctx context.Context, arg CreateNoteParams) (Note, error)
 	CreateOAuthClient(ctx context.Context, arg CreateOAuthClientParams) (OauthClient, error)
 	CreateOAuthCode(ctx context.Context, arg CreateOAuthCodeParams) error
 	CreateOAuthToken(ctx context.Context, arg CreateOAuthTokenParams) error
+	CreateSearch(ctx context.Context, arg CreateSearchParams) (Search, error)
 	DeleteAPIKey(ctx context.Context, id string) error
 	DeleteInvite(ctx context.Context, id string) (int64, error)
-	DeleteNote(ctx context.Context, id string) (int64, error)
+	DeleteSearch(ctx context.Context, id string) (int64, error)
 	GetAPIKey(ctx context.Context, id string) (ApiKey, error)
 	GetAPIKeyByHash(ctx context.Context, keyHash string) (ApiKey, error)
-	GetNote(ctx context.Context, id string) (Note, error)
 	GetOAuthClient(ctx context.Context, id string) (OauthClient, error)
 	// A token stops working when its api key is deleted.
 	GetOAuthTokenByHash(ctx context.Context, tokenHash string) (OauthToken, error)
 	GetOAuthTokenByRefreshHash(ctx context.Context, refreshTokenHash *string) (OauthToken, error)
+	GetSearch(ctx context.Context, id string) (Search, error)
 	ListAPIKeys(ctx context.Context) ([]ApiKey, error)
 	// Unused, unexpired, undeleted invites.
 	ListActiveInvites(ctx context.Context) ([]Invite, error)
-	ListNotes(ctx context.Context) ([]Note, error)
+	// Newest first, with how many matches are still new.
+	ListSearches(ctx context.Context) ([]ListSearchesRow, error)
 	RevokeOAuthToken(ctx context.Context, id string) error
 	RevokeOAuthTokenByHash(ctx context.Context, tokenHash string) error
 	SetInviteKey(ctx context.Context, arg SetInviteKeyParams) error
 	TouchAPIKey(ctx context.Context, id string) error
-	// Sets whichever of title and body are given (non-null) and leaves the
-	// rest alone, so a PATCH can send one field.
-	UpdateNote(ctx context.Context, arg UpdateNoteParams) (Note, error)
+	// Replaces every editable field. The endpoint merges a partial update onto
+	// the current row first, because a NULL here has to be able to mean "no
+	// limit" for the price columns.
+	UpdateSearch(ctx context.Context, arg UpdateSearchParams) (Search, error)
 }
 
 var _ Querier = (*Queries)(nil)
