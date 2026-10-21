@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	dbgen "github.com/KevinMcHugh/mr-ebay/internal/db/gen"
+	"github.com/KevinMcHugh/mr-ebay/internal/ebay"
 	"github.com/KevinMcHugh/mr-ebay/internal/server"
 )
 
@@ -24,14 +26,21 @@ func TestPublicOperations(t *testing.T) {
 	}
 }
 
+// nilStore panics on any call, through its nil Querier or here.
+type nilStore struct{ dbgen.Querier }
+
+func (nilStore) RecordResults(context.Context, string, []ebay.Item) ([]app.Recorded, error) {
+	panic("reached the store")
+}
+
 // TestAnonymousCallers checks every operation refuses a caller with no
-// credential before it reaches the store: the nil Querier panics if one does.
+// credential before it reaches the store: nilStore and the nil eBay client panic if one does.
 func TestAnonymousCallers(t *testing.T) {
 	r := chi.NewRouter()
 	deny := func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
 	}
-	server.New(struct{ dbgen.Querier }{}, app.NewLinks("https://app.example")).Mount(r, deny)
+	server.New(nilStore{}, nil, app.NewLinks("https://app.example")).Mount(r, deny)
 
 	for _, tc := range []struct{ method, path string }{
 		{"GET", "/api/me"},
@@ -40,6 +49,12 @@ func TestAnonymousCallers(t *testing.T) {
 		{"GET", "/api/searches/s1"},
 		{"PATCH", "/api/searches/s1"},
 		{"DELETE", "/api/searches/s1"},
+		{"POST", "/api/searches/s1/run"},
+		{"GET", "/api/searches/s1/matches"},
+		{"POST", "/api/matches/status"},
+		{"GET", "/api/listings/l1"},
+		{"GET", "/api/runs"},
+		{"GET", "/api/ebay/search?q=x"},
 	} {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{}`)))

@@ -13,7 +13,11 @@ import (
 	apigen "github.com/KevinMcHugh/mr-ebay/internal/api/gen"
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	dbgen "github.com/KevinMcHugh/mr-ebay/internal/db/gen"
+	"github.com/KevinMcHugh/mr-ebay/internal/ebay"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/listings"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/matches"
 	"github.com/KevinMcHugh/mr-ebay/internal/server/me"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/runs"
 	"github.com/KevinMcHugh/mr-ebay/internal/server/searches"
 )
 
@@ -25,18 +29,21 @@ const BaseURL = "/api"
 // an endpoint needs a transaction that app.Store implements by hand.
 type Store interface {
 	dbgen.Querier
+	RecordResults(ctx context.Context, searchID string, items []ebay.Item) ([]app.Recorded, error)
 }
 
 // Server implements apigen.StrictServerInterface by composing per-resource
 // endpoints.
 type Server struct {
 	store Store
+	ebay  ebay.Searcher
 	links app.Links
 }
 
-// New builds the API on store, with links for the URLs in its responses.
-func New(store Store, links app.Links) *Server {
-	return &Server{store: store, links: links}
+// New builds the API on store and the eBay client, with links for the URLs
+// in its responses.
+func New(store Store, eb ebay.Searcher, links app.Links) *Server {
+	return &Server{store: store, ebay: eb, links: links}
 }
 
 // Compile-time assertion: this fails to build until every operation in the
@@ -135,6 +142,13 @@ func isNotFound(err error) bool { return errors.Is(err, app.ErrNotFound) }
 // of bounds.
 func isUnprocessable(err error) bool { return errors.Is(err, app.ErrBadInput) }
 
+// isUpstream is eBay failing, refusing, or not being configured.
+func isUpstream(err error) bool { return errors.Is(err, app.ErrUpstream) }
+
+func upstream(err error) apigen.UpstreamJSONResponse {
+	return apigen.UpstreamJSONResponse{Error: err.Error()}
+}
+
 func notFound(err error) apigen.NotFoundJSONResponse {
 	return apigen.NotFoundJSONResponse{Error: err.Error()}
 }
@@ -200,6 +214,74 @@ func (s *Server) DeleteSearch(ctx context.Context, req apigen.DeleteSearchReques
 	resp, err := Run(ctx, searches.DeleteEndpoint{Store: s.store}, req)
 	if isNotFound(err) {
 		return apigen.DeleteSearch404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
+	}
+	return resp, err
+}
+
+// -----------------------------------------------------------------------------
+// eBay: ad-hoc search and runs
+// -----------------------------------------------------------------------------
+
+func (s *Server) SearchEbay(ctx context.Context, req apigen.SearchEbayRequestObject) (apigen.SearchEbayResponseObject, error) {
+	resp, err := Run(ctx, listings.SearchEndpoint{Ebay: s.ebay}, req)
+	switch {
+	case isUnprocessable(err):
+		return apigen.SearchEbay422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
+	case isUpstream(err):
+		return apigen.SearchEbay502JSONResponse{UpstreamJSONResponse: upstream(err)}, nil
+	}
+	return resp, err
+}
+
+func (s *Server) RunSearch(ctx context.Context, req apigen.RunSearchRequestObject) (apigen.RunSearchResponseObject, error) {
+	resp, err := Run(ctx, runs.RunEndpoint{Store: s.store, Ebay: s.ebay, Links: s.links}, req)
+	switch {
+	case isNotFound(err):
+		return apigen.RunSearch404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
+	case isUpstream(err):
+		return apigen.RunSearch502JSONResponse{UpstreamJSONResponse: upstream(err)}, nil
+	}
+	return resp, err
+}
+
+func (s *Server) ListRuns(ctx context.Context, req apigen.ListRunsRequestObject) (apigen.ListRunsResponseObject, error) {
+	resp, err := Run(ctx, runs.ListEndpoint{Store: s.store}, req)
+	if isUnprocessable(err) {
+		return apigen.ListRuns422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
+	}
+	return resp, err
+}
+
+// -----------------------------------------------------------------------------
+// Matches and listings
+// -----------------------------------------------------------------------------
+
+func (s *Server) ListMatches(ctx context.Context, req apigen.ListMatchesRequestObject) (apigen.ListMatchesResponseObject, error) {
+	resp, err := Run(ctx, matches.ListEndpoint{Store: s.store, Links: s.links}, req)
+	switch {
+	case isNotFound(err):
+		return apigen.ListMatches404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
+	case isUnprocessable(err):
+		return apigen.ListMatches422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
+	}
+	return resp, err
+}
+
+func (s *Server) SetMatchStatus(ctx context.Context, req apigen.SetMatchStatusRequestObject) (apigen.SetMatchStatusResponseObject, error) {
+	if req.Body == nil {
+		return apigen.SetMatchStatus400JSONResponse{BadRequestJSONResponse: bodyRequired()}, nil
+	}
+	resp, err := Run(ctx, matches.SetStatusEndpoint{Store: s.store}, req)
+	if isUnprocessable(err) {
+		return apigen.SetMatchStatus422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
+	}
+	return resp, err
+}
+
+func (s *Server) GetListing(ctx context.Context, req apigen.GetListingRequestObject) (apigen.GetListingResponseObject, error) {
+	resp, err := Run(ctx, listings.GetEndpoint{Store: s.store, Links: s.links}, req)
+	if isNotFound(err) {
+		return apigen.GetListing404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
 	}
 	return resp, err
 }

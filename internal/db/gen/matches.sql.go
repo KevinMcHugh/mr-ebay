@@ -20,3 +20,204 @@ func (q *Queries) CountNewMatches(ctx context.Context, searchID string) (int32, 
 	err := row.Scan(&column_1)
 	return column_1, err
 }
+
+const insertMatch = `-- name: InsertMatch :one
+INSERT INTO matches (id, search_id, listing_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (search_id, listing_id) WHERE deleted_at IS NULL DO NOTHING
+RETURNING id, search_id, listing_id, status, first_seen_at, last_seen_at, alerted_at, created_at, updated_at, deleted_at
+`
+
+type InsertMatchParams struct {
+	ID        string `json:"id"`
+	SearchID  string `json:"search_id"`
+	ListingID string `json:"listing_id"`
+}
+
+// Inserts the pair if it is not there yet. No row back means it already
+// was; TouchMatch then stamps it.
+func (q *Queries) InsertMatch(ctx context.Context, arg InsertMatchParams) (Match, error) {
+	row := q.db.QueryRow(ctx, insertMatch, arg.ID, arg.SearchID, arg.ListingID)
+	var i Match
+	err := row.Scan(
+		&i.ID,
+		&i.SearchID,
+		&i.ListingID,
+		&i.Status,
+		&i.FirstSeenAt,
+		&i.LastSeenAt,
+		&i.AlertedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const listMatches = `-- name: ListMatches :many
+SELECT m.id, m.search_id, m.listing_id, m.status, m.first_seen_at, m.last_seen_at, m.alerted_at, m.created_at, m.updated_at, m.deleted_at, l.id, l.ebay_item_id, l.marketplace, l.title, l.url, l.image_url, l.seller, l.seller_feedback_pct, l.condition, l.buying_options, l.price_cents, l.shipping_cents, l.currency, l.ends_at, l.first_seen_at, l.last_seen_at, l.data, l.created_at, l.updated_at, l.deleted_at
+FROM matches m
+JOIN listings l ON l.id = m.listing_id AND l.deleted_at IS NULL
+WHERE m.search_id = $1
+  AND m.deleted_at IS NULL
+  AND ($2::TEXT IS NULL OR m.status = $2::TEXT)
+ORDER BY m.first_seen_at DESC, m.id DESC
+LIMIT $3
+`
+
+type ListMatchesParams struct {
+	SearchID   string  `json:"search_id"`
+	Status     *string `json:"status"`
+	LimitCount int32   `json:"limit_count"`
+}
+
+type ListMatchesRow struct {
+	Match   Match   `json:"match"`
+	Listing Listing `json:"listing"`
+}
+
+// A search's matches with their listings, newest first. status NULL means
+// every status.
+func (q *Queries) ListMatches(ctx context.Context, arg ListMatchesParams) ([]ListMatchesRow, error) {
+	rows, err := q.db.Query(ctx, listMatches, arg.SearchID, arg.Status, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMatchesRow{}
+	for rows.Next() {
+		var i ListMatchesRow
+		if err := rows.Scan(
+			&i.Match.ID,
+			&i.Match.SearchID,
+			&i.Match.ListingID,
+			&i.Match.Status,
+			&i.Match.FirstSeenAt,
+			&i.Match.LastSeenAt,
+			&i.Match.AlertedAt,
+			&i.Match.CreatedAt,
+			&i.Match.UpdatedAt,
+			&i.Match.DeletedAt,
+			&i.Listing.ID,
+			&i.Listing.EbayItemID,
+			&i.Listing.Marketplace,
+			&i.Listing.Title,
+			&i.Listing.Url,
+			&i.Listing.ImageUrl,
+			&i.Listing.Seller,
+			&i.Listing.SellerFeedbackPct,
+			&i.Listing.Condition,
+			&i.Listing.BuyingOptions,
+			&i.Listing.PriceCents,
+			&i.Listing.ShippingCents,
+			&i.Listing.Currency,
+			&i.Listing.EndsAt,
+			&i.Listing.FirstSeenAt,
+			&i.Listing.LastSeenAt,
+			&i.Listing.Data,
+			&i.Listing.CreatedAt,
+			&i.Listing.UpdatedAt,
+			&i.Listing.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMatchesForListing = `-- name: ListMatchesForListing :many
+SELECT m.id, m.search_id, m.listing_id, m.status, m.first_seen_at, m.last_seen_at, m.alerted_at, m.created_at, m.updated_at, m.deleted_at, s.name AS search_name
+FROM matches m
+JOIN searches s ON s.id = m.search_id AND s.deleted_at IS NULL
+WHERE m.listing_id = $1 AND m.deleted_at IS NULL
+ORDER BY m.first_seen_at
+`
+
+type ListMatchesForListingRow struct {
+	Match      Match  `json:"match"`
+	SearchName string `json:"search_name"`
+}
+
+// Every search that found a listing, with the search's name.
+func (q *Queries) ListMatchesForListing(ctx context.Context, listingID string) ([]ListMatchesForListingRow, error) {
+	rows, err := q.db.Query(ctx, listMatchesForListing, listingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMatchesForListingRow{}
+	for rows.Next() {
+		var i ListMatchesForListingRow
+		if err := rows.Scan(
+			&i.Match.ID,
+			&i.Match.SearchID,
+			&i.Match.ListingID,
+			&i.Match.Status,
+			&i.Match.FirstSeenAt,
+			&i.Match.LastSeenAt,
+			&i.Match.AlertedAt,
+			&i.Match.CreatedAt,
+			&i.Match.UpdatedAt,
+			&i.Match.DeletedAt,
+			&i.SearchName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setMatchStatus = `-- name: SetMatchStatus :execrows
+UPDATE matches SET status = $1, updated_at = NOW()
+WHERE id = ANY($2::CHAR(20)[]) AND deleted_at IS NULL
+`
+
+type SetMatchStatusParams struct {
+	Status string   `json:"status"`
+	Ids    []string `json:"ids"`
+}
+
+func (q *Queries) SetMatchStatus(ctx context.Context, arg SetMatchStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setMatchStatus, arg.Status, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const touchMatch = `-- name: TouchMatch :one
+UPDATE matches SET last_seen_at = NOW(), updated_at = NOW()
+WHERE search_id = $1 AND listing_id = $2 AND deleted_at IS NULL
+RETURNING id, search_id, listing_id, status, first_seen_at, last_seen_at, alerted_at, created_at, updated_at, deleted_at
+`
+
+type TouchMatchParams struct {
+	SearchID  string `json:"search_id"`
+	ListingID string `json:"listing_id"`
+}
+
+func (q *Queries) TouchMatch(ctx context.Context, arg TouchMatchParams) (Match, error) {
+	row := q.db.QueryRow(ctx, touchMatch, arg.SearchID, arg.ListingID)
+	var i Match
+	err := row.Scan(
+		&i.ID,
+		&i.SearchID,
+		&i.ListingID,
+		&i.Status,
+		&i.FirstSeenAt,
+		&i.LastSeenAt,
+		&i.AlertedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}

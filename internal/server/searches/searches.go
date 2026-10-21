@@ -18,6 +18,7 @@ import (
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	"github.com/KevinMcHugh/mr-ebay/internal/auth"
 	dbgen "github.com/KevinMcHugh/mr-ebay/internal/db/gen"
+	"github.com/KevinMcHugh/mr-ebay/internal/ebay"
 )
 
 // Limits, in characters.
@@ -454,3 +455,24 @@ func limit(cents int64) *int64 {
 	}
 	return &cents
 }
+
+// CleanQuery is Clean for a search that is not being saved, so it needs no
+// name: an ad-hoc search's filters are checked exactly as a saved one's.
+func CleanQuery(f Fields) (Fields, error) {
+	f.Name = "unsaved"
+	f, err := Clean(f)
+	f.Name = ""
+	return f, err
+}
+
+// EbayQuery is f as an eBay query fetching at most maxItems.
+func (f Fields) EbayQuery(maxItems int) ebay.Query {
+	return ebay.Query{
+		Keywords: f.Query, CategoryIDs: f.CategoryIDs, Conditions: f.Conditions, BuyingOptions: f.BuyingOptions,
+		MinPriceCents: f.MinPriceCents, MaxPriceCents: f.MaxPriceCents, Currency: f.Currency, Marketplace: f.Marketplace,
+		MaxItems: maxItems,
+	}
+}
+
+// QueryOf is a stored search as an eBay query, at eBay's default page.
+func QueryOf(r dbgen.Search) ebay.Query { return fieldsOf(r).EbayQuery(0) }

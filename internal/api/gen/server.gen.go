@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -21,9 +22,141 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for MatchStatus.
+const (
+	Dismissed MatchStatus = "dismissed"
+	New       MatchStatus = "new"
+	Seen      MatchStatus = "seen"
+	Starred   MatchStatus = "starred"
+)
+
+// Valid indicates whether the value is a known member of the MatchStatus enum.
+func (e MatchStatus) Valid() bool {
+	switch e {
+	case Dismissed:
+		return true
+	case New:
+		return true
+	case Seen:
+		return true
+	case Starred:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RunTrigger.
+const (
+	Manual RunTrigger = "manual"
+	Watch  RunTrigger = "watch"
+)
+
+// Valid indicates whether the value is a known member of the RunTrigger enum.
+func (e RunTrigger) Valid() bool {
+	switch e {
+	case Manual:
+		return true
+	case Watch:
+		return true
+	default:
+		return false
+	}
+}
+
+// EbaySearchResult defines model for EbaySearchResult.
+type EbaySearchResult struct {
+	Listings []Listing `json:"listings"`
+
+	// Total How many eBay says match in all; listings holds at most maxItems.
+	Total int `json:"total"`
+}
+
 // Error defines model for Error.
 type Error struct {
 	Error string `json:"error"`
+}
+
+// Listing defines model for Listing.
+type Listing struct {
+	BuyingOptions []string   `json:"buyingOptions"`
+	Condition     string     `json:"condition"`
+	Currency      string     `json:"currency"`
+	EbayItemId    string     `json:"ebayItemId"`
+	EndsAt        *time.Time `json:"endsAt,omitempty"`
+	FirstSeenAt   *time.Time `json:"firstSeenAt,omitempty"`
+
+	// Id Omitted for an ad-hoc search's results, which are not stored.
+	Id          string     `json:"id,omitempty"`
+	ImageUrl    string     `json:"imageUrl"`
+	LastSeenAt  *time.Time `json:"lastSeenAt,omitempty"`
+	Marketplace string     `json:"marketplace"`
+
+	// PageUrl The listing's page here; omitted when it is not stored.
+	PageUrl string `json:"pageUrl,omitempty"`
+
+	// PriceCents Buy It Now price, or the current bid for an auction without one.
+	PriceCents        int64    `json:"priceCents"`
+	Seller            string   `json:"seller"`
+	SellerFeedbackPct *float64 `json:"sellerFeedbackPct,omitempty"`
+
+	// ShippingCents Omitted when eBay gave no shipping cost (calculated shipping).
+	ShippingCents *int64 `json:"shippingCents,omitempty"`
+	Title         string `json:"title"`
+
+	// TotalCents Price plus shipping, counting unknown shipping as 0.
+	TotalCents int64 `json:"totalCents"`
+
+	// Url The listing on eBay.
+	Url string `json:"url"`
+}
+
+// ListingDetail defines model for ListingDetail.
+type ListingDetail struct {
+	Listing Listing `json:"listing"`
+
+	// Matches Every search that found it.
+	Matches []ListingMatch `json:"matches"`
+
+	// PriceHistory Newest first.
+	PriceHistory []PricePoint `json:"priceHistory"`
+}
+
+// ListingMatch defines model for ListingMatch.
+type ListingMatch struct {
+	MatchId    string      `json:"matchId"`
+	SearchId   string      `json:"searchId"`
+	SearchName string      `json:"searchName"`
+	Status     MatchStatus `json:"status"`
+}
+
+// Match defines model for Match.
+type Match struct {
+	FirstSeenAt time.Time   `json:"firstSeenAt"`
+	Id          string      `json:"id"`
+	LastSeenAt  time.Time   `json:"lastSeenAt"`
+	Listing     Listing     `json:"listing"`
+	SearchId    string      `json:"searchId"`
+	Status      MatchStatus `json:"status"`
+}
+
+// MatchList defines model for MatchList.
+type MatchList struct {
+	Matches []Match `json:"matches"`
+}
+
+// MatchStatus defines model for MatchStatus.
+type MatchStatus string
+
+// MatchStatusResult defines model for MatchStatusResult.
+type MatchStatusResult struct {
+	Updated int64 `json:"updated"`
+}
+
+// MatchStatusUpdate defines model for MatchStatusUpdate.
+type MatchStatusUpdate struct {
+	Ids    []string    `json:"ids"`
+	Status MatchStatus `json:"status"`
 }
 
 // Me defines model for Me.
@@ -32,6 +165,55 @@ type Me struct {
 
 	// Name The label the key was minted with.
 	Name string `json:"name"`
+}
+
+// PriceDrop defines model for PriceDrop.
+type PriceDrop struct {
+	// FromCents The total before this run.
+	FromCents int64 `json:"fromCents"`
+	Match     Match `json:"match"`
+	ToCents   int64 `json:"toCents"`
+}
+
+// PricePoint defines model for PricePoint.
+type PricePoint struct {
+	Currency      string    `json:"currency"`
+	ObservedAt    time.Time `json:"observedAt"`
+	PriceCents    int64     `json:"priceCents"`
+	ShippingCents *int64    `json:"shippingCents,omitempty"`
+	TotalCents    int64     `json:"totalCents"`
+}
+
+// Run defines model for Run.
+type Run struct {
+	// Error Empty when the run succeeded.
+	Error          string     `json:"error"`
+	FinishedAt     *time.Time `json:"finishedAt,omitempty"`
+	Id             string     `json:"id"`
+	NewCount       int        `json:"newCount"`
+	PriceDropCount int        `json:"priceDropCount"`
+	ResultCount    int        `json:"resultCount"`
+	SearchId       string     `json:"searchId"`
+	StartedAt      time.Time  `json:"startedAt"`
+	Trigger        RunTrigger `json:"trigger"`
+}
+
+// RunTrigger defines model for Run.Trigger.
+type RunTrigger string
+
+// RunList defines model for RunList.
+type RunList struct {
+	Runs []Run `json:"runs"`
+}
+
+// RunResult defines model for RunResult.
+type RunResult struct {
+	// NewMatches Matches this search had not found before.
+	NewMatches []Match `json:"newMatches"`
+
+	// PriceDrops Listings whose total fell since a run last saw them.
+	PriceDrops []PriceDrop `json:"priceDrops"`
+	Run        Run         `json:"run"`
 }
 
 // Search defines model for Search.
@@ -128,6 +310,46 @@ type NotFound = Error
 // Unprocessable defines model for Unprocessable.
 type Unprocessable = Error
 
+// Upstream defines model for Upstream.
+type Upstream = Error
+
+// SearchEbayParams defines parameters for SearchEbay.
+type SearchEbayParams struct {
+	// Q eBay keywords.
+	Q             string   `form:"q" json:"q"`
+	CategoryIds   []string `form:"categoryIds,omitempty" json:"categoryIds,omitempty"`
+	Conditions    []string `form:"conditions,omitempty" json:"conditions,omitempty"`
+	BuyingOptions []string `form:"buyingOptions,omitempty" json:"buyingOptions,omitempty"`
+	MinPriceCents int64    `form:"minPriceCents,omitempty" json:"minPriceCents,omitempty"`
+	MaxPriceCents int64    `form:"maxPriceCents,omitempty" json:"maxPriceCents,omitempty"`
+	Currency      string   `form:"currency,omitempty" json:"currency,omitempty"`
+	Marketplace   string   `form:"marketplace,omitempty" json:"marketplace,omitempty"`
+
+	// MaxItems At most this many listings, 1-200 (default 50).
+	MaxItems int `form:"maxItems,omitempty" json:"maxItems,omitempty"`
+}
+
+// ListRunsParams defines parameters for ListRuns.
+type ListRunsParams struct {
+	// SearchId Only this search's runs.
+	SearchId string `form:"searchId,omitempty" json:"searchId,omitempty"`
+
+	// Limit At most this many, 1-200.
+	Limit int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListMatchesParams defines parameters for ListMatches.
+type ListMatchesParams struct {
+	// Status Only matches with this status.
+	Status MatchStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// Limit At most this many, 1-500.
+	Limit int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// SetMatchStatusJSONRequestBody defines body for SetMatchStatus for application/json ContentType.
+type SetMatchStatusJSONRequestBody = MatchStatusUpdate
+
 // CreateSearchJSONRequestBody defines body for CreateSearch for application/json ContentType.
 type CreateSearchJSONRequestBody = SearchCreate
 
@@ -136,9 +358,21 @@ type UpdateSearchJSONRequestBody = SearchUpdate
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// SearchEbay Search eBay without saving anything
+	// (GET /ebay/search)
+	SearchEbay(w http.ResponseWriter, r *http.Request, params SearchEbayParams)
+	// GetListing One stored listing, its price history, and the searches that found it
+	// (GET /listings/{listingId})
+	GetListing(w http.ResponseWriter, r *http.Request, listingId string)
+	// SetMatchStatus Mark matches seen, starred, dismissed, or new again
+	// (POST /matches/status)
+	SetMatchStatus(w http.ResponseWriter, r *http.Request)
 	// GetMe The api key this request acts as
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// ListRuns Recent runs, newest first
+	// (GET /runs)
+	ListRuns(w http.ResponseWriter, r *http.Request, params ListRunsParams)
 	// ListSearches List saved searches, newest first
 	// (GET /searches)
 	ListSearches(w http.ResponseWriter, r *http.Request)
@@ -154,15 +388,45 @@ type ServerInterface interface {
 	// UpdateSearch Change a saved search
 	// (PATCH /searches/{searchId})
 	UpdateSearch(w http.ResponseWriter, r *http.Request, searchId SearchId)
+	// ListMatches A search's matches, newest first
+	// (GET /searches/{searchId}/matches)
+	ListMatches(w http.ResponseWriter, r *http.Request, searchId SearchId, params ListMatchesParams)
+	// RunSearch Run a saved search against eBay now
+	// (POST /searches/{searchId}/run)
+	RunSearch(w http.ResponseWriter, r *http.Request, searchId SearchId)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
 
+// SearchEbay Search eBay without saving anything
+// (GET /ebay/search)
+func (_ Unimplemented) SearchEbay(w http.ResponseWriter, r *http.Request, params SearchEbayParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetListing One stored listing, its price history, and the searches that found it
+// (GET /listings/{listingId})
+func (_ Unimplemented) GetListing(w http.ResponseWriter, r *http.Request, listingId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SetMatchStatus Mark matches seen, starred, dismissed, or new again
+// (POST /matches/status)
+func (_ Unimplemented) SetMatchStatus(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // GetMe The api key this request acts as
 // (GET /me)
 func (_ Unimplemented) GetMe(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListRuns Recent runs, newest first
+// (GET /runs)
+func (_ Unimplemented) ListRuns(w http.ResponseWriter, r *http.Request, params ListRunsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -196,6 +460,18 @@ func (_ Unimplemented) UpdateSearch(w http.ResponseWriter, r *http.Request, sear
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ListMatches A search's matches, newest first
+// (GET /searches/{searchId}/matches)
+func (_ Unimplemented) ListMatches(w http.ResponseWriter, r *http.Request, searchId SearchId, params ListMatchesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RunSearch Run a saved search against eBay now
+// (POST /searches/{searchId}/run)
+func (_ Unimplemented) RunSearch(w http.ResponseWriter, r *http.Request, searchId SearchId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ServerInterfaceWrapper converts contexts to parameters.
 type ServerInterfaceWrapper struct {
 	Handler            ServerInterface
@@ -205,11 +481,234 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// SearchEbay operation middleware
+func (siw *ServerInterfaceWrapper) SearchEbay(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SearchEbayParams
+
+	// ------------- Required query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "categoryIds" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "categoryIds", r.URL.Query(), &params.CategoryIds, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "categoryIds"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "categoryIds", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "conditions" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "conditions", r.URL.Query(), &params.Conditions, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "conditions"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "conditions", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "buyingOptions" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "buyingOptions", r.URL.Query(), &params.BuyingOptions, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "buyingOptions"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "buyingOptions", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "minPriceCents" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "minPriceCents", r.URL.Query(), &params.MinPriceCents, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "minPriceCents"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "minPriceCents", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "maxPriceCents" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "maxPriceCents", r.URL.Query(), &params.MaxPriceCents, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "maxPriceCents"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "maxPriceCents", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "currency" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "currency", r.URL.Query(), &params.Currency, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "currency"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "currency", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "marketplace" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "marketplace", r.URL.Query(), &params.Marketplace, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "marketplace"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "marketplace", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "maxItems" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "maxItems", r.URL.Query(), &params.MaxItems, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "maxItems"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "maxItems", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SearchEbay(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetListing operation middleware
+func (siw *ServerInterfaceWrapper) GetListing(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "listingId" -------------
+	var listingId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "listingId", chi.URLParam(r, "listingId"), &listingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "listingId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetListing(w, r, listingId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetMatchStatus operation middleware
+func (siw *ServerInterfaceWrapper) SetMatchStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetMatchStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetMe operation middleware
 func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRuns operation middleware
+func (siw *ServerInterfaceWrapper) ListRuns(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListRunsParams
+
+	// ------------- Optional query parameter "searchId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "searchId", r.URL.Query(), &params.SearchId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "searchId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "searchId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRuns(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -316,6 +815,87 @@ func (siw *ServerInterfaceWrapper) UpdateSearch(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateSearch(w, r, searchId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListMatches operation middleware
+func (siw *ServerInterfaceWrapper) ListMatches(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "searchId" -------------
+	var searchId SearchId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "searchId", chi.URLParam(r, "searchId"), &searchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "searchId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListMatchesParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMatches(w, r, searchId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RunSearch operation middleware
+func (siw *ServerInterfaceWrapper) RunSearch(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "searchId" -------------
+	var searchId SearchId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "searchId", chi.URLParam(r, "searchId"), &searchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "searchId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RunSearch(w, r, searchId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -456,6 +1036,24 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/searches/{searchId}", wrapper.UpdateSearch)
 	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/searches/{searchId}/run", wrapper.RunSearch)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/searches/{searchId}/matches", wrapper.ListMatches)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/matches/status", wrapper.SetMatchStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/listings/{listingId}", wrapper.GetListing)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/runs", wrapper.ListRuns)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/ebay/search", wrapper.SearchEbay)
+	})
 
 	return r
 }
@@ -467,6 +1065,177 @@ type NotFoundJSONResponse Error
 type UnauthorizedTextResponse string
 
 type UnprocessableJSONResponse Error
+
+type UpstreamJSONResponse Error
+
+type SearchEbayRequestObject struct {
+	Params SearchEbayParams
+}
+
+type SearchEbayResponseObject interface {
+	VisitSearchEbayResponse(w http.ResponseWriter) error
+}
+
+type SearchEbay200JSONResponse EbaySearchResult
+
+func (response SearchEbay200JSONResponse) VisitSearchEbayResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchEbay401TextResponse UnauthorizedTextResponse
+
+func (response SearchEbay401TextResponse) VisitSearchEbayResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(401)
+
+	_, err := w.Write([]byte(fmt.Sprint(response)))
+	return err
+}
+
+type SearchEbay422JSONResponse struct{ UnprocessableJSONResponse }
+
+func (response SearchEbay422JSONResponse) VisitSearchEbayResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchEbay502JSONResponse struct{ UpstreamJSONResponse }
+
+func (response SearchEbay502JSONResponse) VisitSearchEbayResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetListingRequestObject struct {
+	ListingId string `json:"listingId"`
+}
+
+type GetListingResponseObject interface {
+	VisitGetListingResponse(w http.ResponseWriter) error
+}
+
+type GetListing200JSONResponse ListingDetail
+
+func (response GetListing200JSONResponse) VisitGetListingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetListing401TextResponse UnauthorizedTextResponse
+
+func (response GetListing401TextResponse) VisitGetListingResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(401)
+
+	_, err := w.Write([]byte(fmt.Sprint(response)))
+	return err
+}
+
+type GetListing404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetListing404JSONResponse) VisitGetListingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetMatchStatusRequestObject struct {
+	Body *SetMatchStatusJSONRequestBody
+}
+
+type SetMatchStatusResponseObject interface {
+	VisitSetMatchStatusResponse(w http.ResponseWriter) error
+}
+
+type SetMatchStatus200JSONResponse MatchStatusResult
+
+func (response SetMatchStatus200JSONResponse) VisitSetMatchStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetMatchStatus400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response SetMatchStatus400JSONResponse) VisitSetMatchStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetMatchStatus401TextResponse UnauthorizedTextResponse
+
+func (response SetMatchStatus401TextResponse) VisitSetMatchStatusResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(401)
+
+	_, err := w.Write([]byte(fmt.Sprint(response)))
+	return err
+}
+
+type SetMatchStatus422JSONResponse struct{ UnprocessableJSONResponse }
+
+func (response SetMatchStatus422JSONResponse) VisitSetMatchStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type GetMeRequestObject struct {
 }
@@ -497,6 +1266,53 @@ func (response GetMe401TextResponse) VisitGetMeResponse(w http.ResponseWriter) e
 	w.WriteHeader(401)
 
 	_, err := w.Write([]byte(fmt.Sprint(response)))
+	return err
+}
+
+type ListRunsRequestObject struct {
+	Params ListRunsParams
+}
+
+type ListRunsResponseObject interface {
+	VisitListRunsResponse(w http.ResponseWriter) error
+}
+
+type ListRuns200JSONResponse RunList
+
+func (response ListRuns200JSONResponse) VisitListRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRuns401TextResponse UnauthorizedTextResponse
+
+func (response ListRuns401TextResponse) VisitListRunsResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(401)
+
+	_, err := w.Write([]byte(fmt.Sprint(response)))
+	return err
+}
+
+type ListRuns422JSONResponse struct{ UnprocessableJSONResponse }
+
+func (response ListRuns422JSONResponse) VisitListRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
 	return err
 }
 
@@ -757,11 +1573,146 @@ func (response UpdateSearch422JSONResponse) VisitUpdateSearchResponse(w http.Res
 	return err
 }
 
+type ListMatchesRequestObject struct {
+	SearchId SearchId `json:"searchId"`
+	Params   ListMatchesParams
+}
+
+type ListMatchesResponseObject interface {
+	VisitListMatchesResponse(w http.ResponseWriter) error
+}
+
+type ListMatches200JSONResponse MatchList
+
+func (response ListMatches200JSONResponse) VisitListMatchesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMatches401TextResponse UnauthorizedTextResponse
+
+func (response ListMatches401TextResponse) VisitListMatchesResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(401)
+
+	_, err := w.Write([]byte(fmt.Sprint(response)))
+	return err
+}
+
+type ListMatches404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListMatches404JSONResponse) VisitListMatchesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMatches422JSONResponse struct{ UnprocessableJSONResponse }
+
+func (response ListMatches422JSONResponse) VisitListMatchesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunSearchRequestObject struct {
+	SearchId SearchId `json:"searchId"`
+}
+
+type RunSearchResponseObject interface {
+	VisitRunSearchResponse(w http.ResponseWriter) error
+}
+
+type RunSearch200JSONResponse RunResult
+
+func (response RunSearch200JSONResponse) VisitRunSearchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunSearch401TextResponse UnauthorizedTextResponse
+
+func (response RunSearch401TextResponse) VisitRunSearchResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(401)
+
+	_, err := w.Write([]byte(fmt.Sprint(response)))
+	return err
+}
+
+type RunSearch404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RunSearch404JSONResponse) VisitRunSearchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunSearch502JSONResponse struct{ UpstreamJSONResponse }
+
+func (response RunSearch502JSONResponse) VisitRunSearchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// SearchEbay Search eBay without saving anything
+	// (GET /ebay/search)
+	SearchEbay(ctx context.Context, request SearchEbayRequestObject) (SearchEbayResponseObject, error)
+	// GetListing One stored listing, its price history, and the searches that found it
+	// (GET /listings/{listingId})
+	GetListing(ctx context.Context, request GetListingRequestObject) (GetListingResponseObject, error)
+	// SetMatchStatus Mark matches seen, starred, dismissed, or new again
+	// (POST /matches/status)
+	SetMatchStatus(ctx context.Context, request SetMatchStatusRequestObject) (SetMatchStatusResponseObject, error)
 	// GetMe The api key this request acts as
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// ListRuns Recent runs, newest first
+	// (GET /runs)
+	ListRuns(ctx context.Context, request ListRunsRequestObject) (ListRunsResponseObject, error)
 	// ListSearches List saved searches, newest first
 	// (GET /searches)
 	ListSearches(ctx context.Context, request ListSearchesRequestObject) (ListSearchesResponseObject, error)
@@ -777,6 +1728,12 @@ type StrictServerInterface interface {
 	// UpdateSearch Change a saved search
 	// (PATCH /searches/{searchId})
 	UpdateSearch(ctx context.Context, request UpdateSearchRequestObject) (UpdateSearchResponseObject, error)
+	// ListMatches A search's matches, newest first
+	// (GET /searches/{searchId}/matches)
+	ListMatches(ctx context.Context, request ListMatchesRequestObject) (ListMatchesResponseObject, error)
+	// RunSearch Run a saved search against eBay now
+	// (POST /searches/{searchId}/run)
+	RunSearch(ctx context.Context, request RunSearchRequestObject) (RunSearchResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -818,6 +1775,89 @@ type strictHandler struct {
 	options     StrictHTTPServerOptions
 }
 
+// SearchEbay operation middleware
+func (sh *strictHandler) SearchEbay(w http.ResponseWriter, r *http.Request, params SearchEbayParams) {
+	var request SearchEbayRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SearchEbay(ctx, request.(SearchEbayRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SearchEbay")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SearchEbayResponseObject); ok {
+		if err := validResponse.VisitSearchEbayResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetListing operation middleware
+func (sh *strictHandler) GetListing(w http.ResponseWriter, r *http.Request, listingId string) {
+	var request GetListingRequestObject
+
+	request.ListingId = listingId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetListing(ctx, request.(GetListingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetListing")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetListingResponseObject); ok {
+		if err := validResponse.VisitGetListingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetMatchStatus operation middleware
+func (sh *strictHandler) SetMatchStatus(w http.ResponseWriter, r *http.Request) {
+	var request SetMatchStatusRequestObject
+
+	var body SetMatchStatusJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetMatchStatus(ctx, request.(SetMatchStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetMatchStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetMatchStatusResponseObject); ok {
+		if err := validResponse.VisitSetMatchStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetMe operation middleware
 func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	var request GetMeRequestObject
@@ -835,6 +1875,32 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListRuns operation middleware
+func (sh *strictHandler) ListRuns(w http.ResponseWriter, r *http.Request, params ListRunsParams) {
+	var request ListRunsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListRuns(ctx, request.(ListRunsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListRuns")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListRunsResponseObject); ok {
+		if err := validResponse.VisitListRunsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -982,43 +2048,122 @@ func (sh *strictHandler) UpdateSearch(w http.ResponseWriter, r *http.Request, se
 	}
 }
 
+// ListMatches operation middleware
+func (sh *strictHandler) ListMatches(w http.ResponseWriter, r *http.Request, searchId SearchId, params ListMatchesParams) {
+	var request ListMatchesRequestObject
+
+	request.SearchId = searchId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListMatches(ctx, request.(ListMatchesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListMatches")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListMatchesResponseObject); ok {
+		if err := validResponse.VisitListMatchesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RunSearch operation middleware
+func (sh *strictHandler) RunSearch(w http.ResponseWriter, r *http.Request, searchId SearchId) {
+	var request RunSearchRequestObject
+
+	request.SearchId = searchId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RunSearch(ctx, request.(RunSearchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RunSearch")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RunSearchResponseObject); ok {
+		if err := validResponse.VisitRunSearchResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"+Pkr2ZmdlS/s046QeUOWcjLt/wUAAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

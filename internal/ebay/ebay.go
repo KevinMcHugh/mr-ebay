@@ -89,6 +89,8 @@ type Item struct {
 	ShippingCents *int64
 	Currency      string
 	EndsAt        *time.Time
+	// Marketplace is the one it was found on, from the query.
+	Marketplace string
 	// Raw is the item summary exactly as eBay sent it.
 	Raw json.RawMessage
 }
@@ -228,6 +230,7 @@ func (c *Client) searchCategory(ctx context.Context, q Query, category string, w
 			if err != nil {
 				return nil, 0, err
 			}
+			it.Marketplace = q.Marketplace
 			out = append(out, it)
 		}
 		offset += len(page.ItemSummaries)

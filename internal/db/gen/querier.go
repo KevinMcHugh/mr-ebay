@@ -19,30 +19,53 @@ type Querier interface {
 	CreateOAuthClient(ctx context.Context, arg CreateOAuthClientParams) (OauthClient, error)
 	CreateOAuthCode(ctx context.Context, arg CreateOAuthCodeParams) error
 	CreateOAuthToken(ctx context.Context, arg CreateOAuthTokenParams) error
+	CreateRun(ctx context.Context, arg CreateRunParams) (SearchRun, error)
 	CreateSearch(ctx context.Context, arg CreateSearchParams) (Search, error)
 	DeleteAPIKey(ctx context.Context, id string) error
 	DeleteInvite(ctx context.Context, id string) (int64, error)
 	DeleteSearch(ctx context.Context, id string) (int64, error)
+	FinishRun(ctx context.Context, arg FinishRunParams) (SearchRun, error)
 	GetAPIKey(ctx context.Context, id string) (ApiKey, error)
 	GetAPIKeyByHash(ctx context.Context, keyHash string) (ApiKey, error)
+	GetListing(ctx context.Context, id string) (Listing, error)
 	GetOAuthClient(ctx context.Context, id string) (OauthClient, error)
 	// A token stops working when its api key is deleted.
 	GetOAuthTokenByHash(ctx context.Context, tokenHash string) (OauthToken, error)
 	GetOAuthTokenByRefreshHash(ctx context.Context, refreshTokenHash *string) (OauthToken, error)
 	GetSearch(ctx context.Context, id string) (Search, error)
+	// Inserts the pair if it is not there yet. No row back means it already
+	// was; TouchMatch then stamps it.
+	InsertMatch(ctx context.Context, arg InsertMatchParams) (Match, error)
+	InsertPricePoint(ctx context.Context, arg InsertPricePointParams) error
+	LatestPricePoint(ctx context.Context, listingID string) (PricePoint, error)
 	ListAPIKeys(ctx context.Context) ([]ApiKey, error)
 	// Unused, unexpired, undeleted invites.
 	ListActiveInvites(ctx context.Context) ([]Invite, error)
+	// A search's matches with their listings, newest first. status NULL means
+	// every status.
+	ListMatches(ctx context.Context, arg ListMatchesParams) ([]ListMatchesRow, error)
+	// Every search that found a listing, with the search's name.
+	ListMatchesForListing(ctx context.Context, listingID string) ([]ListMatchesForListingRow, error)
+	// Newest first.
+	ListPricePoints(ctx context.Context, listingID string) ([]PricePoint, error)
+	// Newest first, for one search or (search_id NULL) every live one.
+	ListRuns(ctx context.Context, arg ListRunsParams) ([]SearchRun, error)
 	// Newest first, with how many matches are still new.
 	ListSearches(ctx context.Context) ([]ListSearchesRow, error)
+	MarkSearchRun(ctx context.Context, id string) error
 	RevokeOAuthToken(ctx context.Context, id string) error
 	RevokeOAuthTokenByHash(ctx context.Context, tokenHash string) error
 	SetInviteKey(ctx context.Context, arg SetInviteKeyParams) error
+	SetMatchStatus(ctx context.Context, arg SetMatchStatusParams) (int64, error)
 	TouchAPIKey(ctx context.Context, id string) error
+	TouchMatch(ctx context.Context, arg TouchMatchParams) (Match, error)
 	// Replaces every editable field. The endpoint merges a partial update onto
 	// the current row first, because a NULL here has to be able to mean "no
 	// limit" for the price columns.
 	UpdateSearch(ctx context.Context, arg UpdateSearchParams) (Search, error)
+	// One row per eBay item: a run refreshes everything eBay says about it and
+	// stamps last_seen_at.
+	UpsertListing(ctx context.Context, arg UpsertListingParams) (Listing, error)
 }
 
 var _ Querier = (*Queries)(nil)

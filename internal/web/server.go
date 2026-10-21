@@ -21,6 +21,7 @@ import (
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	"github.com/KevinMcHugh/mr-ebay/internal/appmcp"
 	"github.com/KevinMcHugh/mr-ebay/internal/auth"
+	"github.com/KevinMcHugh/mr-ebay/internal/ebay"
 	"github.com/KevinMcHugh/mr-ebay/internal/oauth"
 	"github.com/KevinMcHugh/mr-ebay/internal/server"
 )
@@ -31,6 +32,7 @@ var templateFS embed.FS
 // Server holds what the routes need.
 type Server struct {
 	Store  *app.Store
+	Ebay   ebay.Searcher
 	Links  app.Links
 	API    *server.Server // the JSON API, mounted at /api
 	OAuth  *oauth.Handler
@@ -40,16 +42,17 @@ type Server struct {
 	pages map[string]*template.Template
 }
 
-// New assembles the server on store: the API and the MCP tools over the same
-// endpoints, and OAuth issuing for issuer, which is also the origin of every
-// link in a response.
-func New(store *app.Store, issuer string) *Server {
+// New assembles the server on store and the eBay client: the API and the
+// MCP tools over the same endpoints, and OAuth issuing for issuer, which is
+// also the origin of every link in a response.
+func New(store *app.Store, eb ebay.Searcher, issuer string) *Server {
 	links := app.NewLinks(issuer)
-	mcpServer := appmcp.NewServer(store, links)
+	mcpServer := appmcp.NewServer(store, eb, links)
 	return &Server{
 		Store:  store,
+		Ebay:   eb,
 		Links:  links,
-		API:    server.New(store, links),
+		API:    server.New(store, eb, links),
 		OAuth:  &oauth.Handler{Issuer: issuer, AppName: app.Name, Q: store.Queries, Invites: store},
 		Issuer: issuer,
 		MCP:    mcpsdk.NewStreamableHTTPHandler(func(*http.Request) *mcpsdk.Server { return mcpServer }, nil),

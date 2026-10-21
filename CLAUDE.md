@@ -27,7 +27,11 @@ To change something in a generated file, edit its source (the spec, a query or a
 - `Build(M) VM` is a pure transformation to the view model, which carries JSON tags because MCP returns it as is.
 - `Render(VM) Res` wraps the view model in the generated response type.
 
-Endpoints return `app.ErrNotFound` or `app.ErrBadInput` (wrapped with `%w` and a message). `internal/server/server.go` maps them to the spec's 404 and 422, the pages map them to the same statuses, and MCP returns them as tool errors.
+Endpoints return `app.ErrNotFound`, `app.ErrBadInput` or `app.ErrUpstream` (wrapped with `%w` and a message; `app.Upstream(err)` wraps an eBay client error). `internal/server/server.go` maps them to the spec's 404, 422 and 502, the pages map them to the same statuses, and MCP returns them as tool errors.
+
+## eBay
+
+Only `internal/ebay` talks to eBay. Endpoints take it as a narrow `Searcher` interface field, the way they take a Store. Tests use the fake in `internal/ebay/ebaytest`; never call the real eBay from a test.
 
 ## Adding a resource
 

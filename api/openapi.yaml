@@ -123,6 +123,203 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /searches/{searchId}/run:
+    parameters:
+      - $ref: "#/components/parameters/SearchId"
+    post:
+      operationId: runSearch
+      summary: Run a saved search against eBay now
+      description: Stores what it finds (listings, price points, matches) and records the run. Returns the matches it had not found before and the listings whose total dropped.
+      responses:
+        "200":
+          description: The finished run and what it found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/Upstream"
+
+  /searches/{searchId}/matches:
+    parameters:
+      - $ref: "#/components/parameters/SearchId"
+    get:
+      operationId: listMatches
+      summary: A search's matches, newest first
+      parameters:
+        - name: status
+          in: query
+          description: Only matches with this status.
+          schema:
+            $ref: "#/components/schemas/MatchStatus"
+        - name: limit
+          in: query
+          description: At most this many, 1-500.
+          schema:
+            type: integer
+            default: 100
+      responses:
+        "200":
+          description: The matches
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /matches/status:
+    post:
+      operationId: setMatchStatus
+      summary: Mark matches seen, starred, dismissed, or new again
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MatchStatusUpdate"
+      responses:
+        "200":
+          description: How many matches changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchStatusResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /listings/{listingId}:
+    parameters:
+      - name: listingId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getListing
+      summary: One stored listing, its price history, and the searches that found it
+      responses:
+        "200":
+          description: The listing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListingDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runs:
+    get:
+      operationId: listRuns
+      summary: Recent runs, newest first
+      parameters:
+        - name: searchId
+          in: query
+          description: Only this search's runs.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: At most this many, 1-200.
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: The runs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /ebay/search:
+    get:
+      operationId: searchEbay
+      summary: Search eBay without saving anything
+      description: For trying queries before saving one. Nothing is stored, so listings have no id.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: eBay keywords.
+          schema:
+            type: string
+        - name: categoryIds
+          in: query
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: conditions
+          in: query
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: buyingOptions
+          in: query
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: minPriceCents
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: maxPriceCents
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: currency
+          in: query
+          schema:
+            type: string
+        - name: marketplace
+          in: query
+          schema:
+            type: string
+        - name: maxItems
+          in: query
+          description: At most this many listings, 1-200 (default 50).
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: What eBay has
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EbaySearchResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "502":
+          $ref: "#/components/responses/Upstream"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -158,6 +355,12 @@ components:
             type: string
     NotFound:
       description: No such resource
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Upstream:
+      description: eBay failed, refused (rate limit), or is not configured
       content:
         application/json:
           schema:
@@ -351,3 +554,245 @@ components:
           type: integer
           format: int64
           x-go-type-skip-optional-pointer: false
+
+    MatchStatus:
+      type: string
+      enum: [new, seen, starred, dismissed]
+
+    Listing:
+      type: object
+      required: [ebayItemId, title, url, imageUrl, seller, condition, buyingOptions, priceCents, totalCents, currency, marketplace]
+      properties:
+        id:
+          type: string
+          description: Omitted for an ad-hoc search's results, which are not stored.
+        ebayItemId:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+          description: The listing on eBay.
+        imageUrl:
+          type: string
+        seller:
+          type: string
+        sellerFeedbackPct:
+          type: number
+          format: double
+          x-go-type-skip-optional-pointer: false
+        condition:
+          type: string
+        buyingOptions:
+          type: array
+          items:
+            type: string
+        priceCents:
+          type: integer
+          format: int64
+          description: Buy It Now price, or the current bid for an auction without one.
+        shippingCents:
+          type: integer
+          format: int64
+          description: Omitted when eBay gave no shipping cost (calculated shipping).
+          x-go-type-skip-optional-pointer: false
+        totalCents:
+          type: integer
+          format: int64
+          description: Price plus shipping, counting unknown shipping as 0.
+        currency:
+          type: string
+        marketplace:
+          type: string
+        endsAt:
+          type: string
+          format: date-time
+          x-go-type-skip-optional-pointer: false
+        firstSeenAt:
+          type: string
+          format: date-time
+          x-go-type-skip-optional-pointer: false
+        lastSeenAt:
+          type: string
+          format: date-time
+          x-go-type-skip-optional-pointer: false
+        pageUrl:
+          type: string
+          description: The listing's page here; omitted when it is not stored.
+
+    EbaySearchResult:
+      type: object
+      required: [total, listings]
+      properties:
+        total:
+          type: integer
+          description: How many eBay says match in all; listings holds at most maxItems.
+        listings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Listing"
+
+    Match:
+      type: object
+      required: [id, searchId, status, firstSeenAt, lastSeenAt, listing]
+      properties:
+        id:
+          type: string
+        searchId:
+          type: string
+        status:
+          $ref: "#/components/schemas/MatchStatus"
+        firstSeenAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+        listing:
+          $ref: "#/components/schemas/Listing"
+
+    MatchList:
+      type: object
+      required: [matches]
+      properties:
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/Match"
+
+    MatchStatusUpdate:
+      type: object
+      required: [ids, status]
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+        status:
+          $ref: "#/components/schemas/MatchStatus"
+
+    MatchStatusResult:
+      type: object
+      required: [updated]
+      properties:
+        updated:
+          type: integer
+          format: int64
+
+    PriceDrop:
+      type: object
+      required: [match, fromCents, toCents]
+      properties:
+        match:
+          $ref: "#/components/schemas/Match"
+        fromCents:
+          type: integer
+          format: int64
+          description: The total before this run.
+        toCents:
+          type: integer
+          format: int64
+
+    Run:
+      type: object
+      required: [id, searchId, trigger, startedAt, resultCount, newCount, priceDropCount, error]
+      properties:
+        id:
+          type: string
+        searchId:
+          type: string
+        trigger:
+          type: string
+          enum: [manual, watch]
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          x-go-type-skip-optional-pointer: false
+        resultCount:
+          type: integer
+        newCount:
+          type: integer
+        priceDropCount:
+          type: integer
+        error:
+          type: string
+          description: Empty when the run succeeded.
+
+    RunResult:
+      type: object
+      required: [run, newMatches, priceDrops]
+      properties:
+        run:
+          $ref: "#/components/schemas/Run"
+        newMatches:
+          type: array
+          description: Matches this search had not found before.
+          items:
+            $ref: "#/components/schemas/Match"
+        priceDrops:
+          type: array
+          description: Listings whose total fell since a run last saw them.
+          items:
+            $ref: "#/components/schemas/PriceDrop"
+
+    RunList:
+      type: object
+      required: [runs]
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Run"
+
+    PricePoint:
+      type: object
+      required: [priceCents, totalCents, currency, observedAt]
+      properties:
+        priceCents:
+          type: integer
+          format: int64
+        shippingCents:
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        totalCents:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        observedAt:
+          type: string
+          format: date-time
+
+    ListingMatch:
+      type: object
+      required: [matchId, searchId, searchName, status]
+      properties:
+        matchId:
+          type: string
+        searchId:
+          type: string
+        searchName:
+          type: string
+        status:
+          $ref: "#/components/schemas/MatchStatus"
+
+    ListingDetail:
+      type: object
+      required: [listing, priceHistory, matches]
+      properties:
+        listing:
+          $ref: "#/components/schemas/Listing"
+        priceHistory:
+          type: array
+          description: Newest first.
+          items:
+            $ref: "#/components/schemas/PricePoint"
+        matches:
+          type: array
+          description: Every search that found it.
+          items:
+            $ref: "#/components/schemas/ListingMatch"

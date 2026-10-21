@@ -41,7 +41,7 @@ type Endpoint[Req, M, VM, Res any] interface {
 - `Req` is the generated `…RequestObject`, even when an MCP tool or a page is the caller. They fill one in themselves, so input validation lives in the endpoint and nowhere else.
 - Each endpoint declares a `Store` interface with only the methods it calls (`searches.DeleteStore` is just `DeleteSearch`). This keeps an endpoint's reach obvious and makes a fake easy to write. `*app.Store` satisfies every one, because it embeds `*dbgen.Queries` and sqlc generates every method.
 - View models carry JSON tags, because MCP tools return them as is.
-- Errors: wrap `app.ErrNotFound` or `app.ErrBadInput` with a message (`app.NotFound` converts pgx's no-rows). `server.go` turns them into the spec's 404 and 422 bodies, the pages turn them into statuses or a redirect with `?err=`, and MCP returns them as tool errors.
+- Errors: wrap `app.ErrNotFound`, `app.ErrBadInput` or `app.ErrUpstream` with a message (`app.NotFound` converts pgx's no-rows; `app.Upstream` wraps an eBay error). `server.go` turns them into the spec's 404, 422 and 502 bodies, the pages turn them into statuses or a redirect with `?err=`, and MCP returns them as tool errors.
 
 ## Conventions
 

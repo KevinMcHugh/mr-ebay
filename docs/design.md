@@ -13,8 +13,8 @@ The server does the mechanical work: calling eBay, de-duplicating, tracking pric
 | --- | --- |
 | Schema for searches, listings, matches, price points, runs | **done** (`db/migrations/20261020000001_ebay.sql`) |
 | Saved searches: REST, MCP tools, pages, tests | **done** (`internal/server/searches`) |
-| eBay client and a fake eBay for tests | **done** (`internal/ebay`, `internal/ebay/ebaytest`); not yet called by any endpoint |
-| Ad-hoc search, running a saved search, matches | planned, steps 2 and 3 |
+| eBay client and a fake eBay for tests | **done** (`internal/ebay`, `internal/ebay/ebaytest`) |
+| Ad-hoc search, running a saved search, matches, listing detail, run log: REST and MCP | **done** (`internal/server/listings`, `matches`, `runs`); no pages yet |
 | Listing pages with photos and price history | planned, step 4 |
 | Watching and alerts | planned, step 5 |
 
@@ -55,16 +55,28 @@ Decisions:
 
 **Sold prices are not in the Browse API.** As far as I know they come from the Marketplace Insights API, which eBay restricts. So the price history here is asking prices over time, not what things sold for.
 
-## Running a search (steps 2 and 3)
+## Running a search (steps 2 and 3, done)
 
-`RunEndpoint` (`POST /api/searches/{id}/run`, MCP `run_search`):
+`runs.RunEndpoint` (`POST /api/searches/{id}/run`, MCP `run_search`):
 
-1. Build the eBay query from the search's columns, then fetch.
-2. In one transaction, per item: upsert the listing by `ebay_item_id`, refreshing its columns, `data` and `last_seen_at`. Insert a price point if the total (price plus shipping) differs from the latest one. Upsert the match, which is `new` on first sight.
-3. Record a `search_runs` row with its counts, or with its error if eBay failed, and set `searches.last_run_at`.
-4. Return the run, the new matches, and price drops.
+1. Logs a `search_runs` row first, so even a run that fails is in the log.
+2. Builds the eBay query from the search's columns (`searches.QueryOf`) and fetches one page (200 items).
+3. Calls `app.Store.RecordResults`, which in one transaction, per item: upserts the listing by `ebay_item_id`, refreshing its columns, `data` and `last_seen_at`; adds a price point when the price, shipping or currency differs from the latest one (or it is the first); and inserts the search-listing match, or stamps `last_seen_at` on the existing one. An existing match keeps its status, so a dismissed listing stays dismissed.
+4. Finishes the run with its counts, and sets `searches.last_run_at`.
+5. Returns `{run, newMatches, priceDrops}`. `newMatches` are this search's first sightings. `priceDrops` are listings whose total (price plus shipping, unknown shipping as 0) fell since a run last saw them. Both lists are always present, even when empty. The first version put them on `Run` itself, and the generated type's `omitempty` silently dropped empty lists, so "none" was indistinguishable from "not reported".
 
-`search_ebay` (MCP) and `GET /api/ebay/search` run an ad-hoc query and **store nothing**, like Creature Lab's `preview_species`. They let Claude try queries before saving one.
+If eBay fails, refuses (rate limit) or is not configured, the run is finished with the error, `last_run_at` is still set (so a broken search does not jump the watcher's queue on every pass), and the caller gets `app.ErrUpstream`: a 502 over REST, a tool error over MCP. The client's own error stays wrapped inside it for `errors.Is`.
+
+`listings.SearchEndpoint` (`GET /api/ebay/search`, MCP `search_ebay`) runs an ad-hoc query and **stores nothing**, like Creature Lab's `preview_species`. It returns 50 listings by default (at most 200), without ids. Its filters go through the same `searches.Clean` as a saved search's, so a bad condition is refused before eBay is called.
+
+The rest:
+
+- `GET /api/searches/{id}/matches` (`list_matches`): newest first, optionally one status, up to 500.
+- `POST /api/matches/status` (`set_match_status`): up to 500 match ids at once. Unknown ids are skipped, and the response counts what changed.
+- `GET /api/listings/{id}` (`get_listing`): the listing, its price history (newest first), and every search that found it with that search's status.
+- `GET /api/runs` (`list_runs`): newest first, for one search or all. Runs of a deleted search drop out.
+
+**Tests:** `internal/web/run_e2e_test.go` drives all of this against Postgres and the fake eBay. It covers new matches, a run with no changes, a price drop, statuses surviving a re-run, a second search sharing a listing but not its status, an eBay failure logged as a run, an ad-hoc search that stores nothing, and the 502 when eBay is not configured.
 
 ## Watching and alerts (step 5)
 
@@ -82,14 +94,14 @@ An alert is a match that is new or whose price dropped, with a total at or below
 | `whoami` | the api key the connection acts as | done |
 | `list_searches`, `get_search` | saved searches, with unread match counts | done |
 | `create_search`, `update_search`, `delete_search` | manage them | done |
-| `search_ebay` | ad-hoc eBay query; stores nothing | planned |
-| `run_search` | run one saved search now; returns new matches and price drops | planned |
+| `search_ebay` | ad-hoc eBay query; stores nothing | done |
+| `run_search` | run one saved search now; returns new matches and price drops | done |
 | `run_watched_searches` | run every watched search (the scheduled task calls this) | planned |
-| `list_matches` | a search's matches, filtered by status, newest first | planned |
-| `set_match_status` | mark matches seen, starred or dismissed | planned |
-| `get_listing` | one listing with its price history and which searches found it | planned |
+| `list_matches` | a search's matches, filtered by status, newest first | done |
+| `set_match_status` | mark matches seen, starred or dismissed | done |
+| `get_listing` | one listing with its price history and which searches found it | done |
 | `list_alerts`, `ack_alerts` | what a watcher should report, and marking it reported | planned |
-| `list_runs` | recent runs and their errors: "is the watcher actually working?" | planned |
+| `list_runs` | recent runs and their errors: "is the watcher actually working?" | done |
 
 Each one gets the matching REST operation in `api/openapi.yaml` and drives the same endpoint, as the search tools do.
 
@@ -104,7 +116,7 @@ They stay separate apps (see the README for why). Claude joins them in conversat
 ## Build order
 
 1. ~~`internal/ebay`: token and search, against a fake server in tests.~~ Done.
-2. `search_ebay` and its REST operation (stores nothing).
-3. `run_search`, matches, `set_match_status`, `get_listing`, `list_runs`.
+2. ~~`search_ebay` and its REST operation (stores nothing).~~ Done.
+3. ~~`run_search`, matches, `set_match_status`, `get_listing`, `list_runs`.~~ Done.
 4. Match grid and listing pages.
 5. `run_watched_searches`, alerts, and the scheduled task's prompt, which goes in this doc.

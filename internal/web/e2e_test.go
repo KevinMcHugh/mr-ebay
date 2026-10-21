@@ -26,6 +26,11 @@ import (
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	"github.com/KevinMcHugh/mr-ebay/internal/auth"
 	dbgen "github.com/KevinMcHugh/mr-ebay/internal/db/gen"
+	"github.com/KevinMcHugh/mr-ebay/internal/ebay"
+	"github.com/KevinMcHugh/mr-ebay/internal/ebay/ebaytest"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/listings"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/matches"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/runs"
 	"github.com/KevinMcHugh/mr-ebay/internal/server/searches"
 	"github.com/KevinMcHugh/mr-ebay/internal/web"
 )
@@ -38,6 +43,8 @@ const dbEnv = "TEST_DATABASE_URL"
 type env struct {
 	t      *testing.T
 	url    string
+	ebay   *ebaytest.Server
+	store  *app.Store
 	key    string
 	keyID  string
 	q      *dbgen.Queries
@@ -60,7 +67,9 @@ func newEnv(t *testing.T) *env {
 	ts := httptest.NewServer(nil)
 	t.Cleanup(ts.Close)
 	store := app.NewStore(pool)
-	ts.Config.Handler = web.New(store, ts.URL).Handler()
+	fake := ebaytest.New(t)
+	eb := ebay.New(ebay.Config{ClientID: ebaytest.ClientID, ClientSecret: ebaytest.ClientSecret, BaseURL: fake.URL})
+	ts.Config.Handler = web.New(store, eb, ts.URL).Handler()
 
 	raw, err := auth.GenerateKey()
 	if err != nil {
@@ -70,7 +79,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &env{t: t, url: ts.URL, key: raw, keyID: key.ID, q: store.Queries, client: &http.Client{
+	return &env{t: t, url: ts.URL, ebay: fake, store: store, key: raw, keyID: key.ID, q: store.Queries, client: &http.Client{
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}
 }
@@ -498,6 +507,38 @@ func TestMCPTools(t *testing.T) {
 	res, err = session.CallTool(ctx, &mcpsdk.CallToolParams{Name: "get_search", Arguments: map[string]any{"id": created.Search.ID}})
 	if err != nil || !res.IsError {
 		t.Fatalf("a deleted search should come back as a tool error: %v %+v", err, res)
+	}
+
+	// The eBay tools, against the fake.
+	e.ebay.Items = []map[string]any{ebaytest.Item("v1|5|0", "Beta jacket", "90.00")}
+	var adhoc struct{ Total int }
+	call("search_ebay", map[string]any{"query": "beta"}, &adhoc)
+	if adhoc.Total != 1 {
+		t.Fatalf("search_ebay %+v", adhoc)
+	}
+	call("create_search", map[string]any{"name": "Beta", "query": "beta"}, &created)
+	var ran runs.Result
+	call("run_search", map[string]any{"id": created.Search.ID}, &ran)
+	if ran.Run.NewCount != 1 || len(ran.NewMatches) != 1 || ran.PriceDrops == nil {
+		t.Fatalf("run_search %+v", ran)
+	}
+	m := ran.NewMatches[0]
+	var set struct{ Updated int64 }
+	call("set_match_status", map[string]any{"ids": []string{m.ID}, "status": "starred"}, &set)
+	var starred struct{ Matches []matches.Match }
+	call("list_matches", map[string]any{"searchId": created.Search.ID, "status": "starred"}, &starred)
+	if set.Updated != 1 || len(starred.Matches) != 1 {
+		t.Fatalf("starred %+v", starred)
+	}
+	var listing struct{ Listing listings.Detail }
+	call("get_listing", map[string]any{"id": m.Listing.ID}, &listing)
+	if len(listing.Listing.PriceHistory) != 1 || listing.Listing.Matches[0].Status != "starred" {
+		t.Fatalf("get_listing %+v", listing.Listing)
+	}
+	var runLog struct{ Runs []runs.Run }
+	call("list_runs", map[string]any{"searchId": created.Search.ID}, &runLog)
+	if len(runLog.Runs) != 1 {
+		t.Fatalf("list_runs %+v", runLog)
 	}
 
 	// Without a credential, MCP is a 401 pointing at OAuth discovery.

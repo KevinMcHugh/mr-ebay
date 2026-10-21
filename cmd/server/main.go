@@ -1,7 +1,8 @@
 // Command server runs the app: web pages, a JSON API and MCP in one
 // process, plus the admin commands that mint credentials. See README.md.
 //
-//	server [serve]                    run the server (DATABASE_URL, PORT, PUBLIC_URL)
+//	server [serve]                    run the server (DATABASE_URL, PORT, PUBLIC_URL,
+//	                                  EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, EBAY_ENV)
 //	server keys create --name NAME    mint an api key (printed once)
 //	server keys list                  list live api keys
 //	server keys rotate --id ID        replace a key, keeping its name
@@ -34,6 +35,7 @@ import (
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	"github.com/KevinMcHugh/mr-ebay/internal/auth"
 	dbgen "github.com/KevinMcHugh/mr-ebay/internal/db/gen"
+	"github.com/KevinMcHugh/mr-ebay/internal/ebay"
 	"github.com/KevinMcHugh/mr-ebay/internal/web"
 )
 
@@ -73,7 +75,14 @@ func serve() error {
 	if issuer == "" {
 		issuer = "http://localhost:" + port
 	}
-	srv := web.New(app.NewStore(pool), issuer)
+	eb, err := ebay.FromEnv()
+	if errors.Is(err, ebay.ErrNotConfigured) {
+		// Still serve: searches can be saved and browsed, and running one
+		// says why it cannot.
+		slog.Warn("eBay is not configured; set EBAY_CLIENT_ID and EBAY_CLIENT_SECRET to search it")
+		eb = ebay.New(ebay.Config{})
+	}
+	srv := web.New(app.NewStore(pool), eb, issuer)
 	slog.Info("listening", "port", port, "public_url", issuer)
 	hs := &http.Server{Addr: ":" + port, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	return hs.ListenAndServe()

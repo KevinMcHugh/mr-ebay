@@ -107,6 +107,8 @@ func statusOf(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, app.ErrBadInput):
 		return http.StatusUnprocessableEntity
+	case errors.Is(err, app.ErrUpstream):
+		return http.StatusBadGateway
 	default:
 		return http.StatusInternalServerError
 	}
