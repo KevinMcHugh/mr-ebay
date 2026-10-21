@@ -13,7 +13,7 @@ The server does the mechanical work: calling eBay, de-duplicating, tracking pric
 | --- | --- |
 | Schema for searches, listings, matches, price points, runs | **done** (`db/migrations/20261020000001_ebay.sql`) |
 | Saved searches: REST, MCP tools, pages, tests | **done** (`internal/server/searches`) |
-| eBay client | planned, step 1 below |
+| eBay client and a fake eBay for tests | **done** (`internal/ebay`, `internal/ebay/ebaytest`); not yet called by any endpoint |
 | Ad-hoc search, running a saved search, matches | planned, steps 2 and 3 |
 | Listing pages with photos and price history | planned, step 4 |
 | Watching and alerts | planned, step 5 |
@@ -36,16 +36,24 @@ Decisions:
 - **Price points and runs are append-only history.** They have no `updated_at` or `deleted_at`, and they go away with their parent. This follows inventory's precedent for derived tables (`indexed_fields`).
 - **A listing that drops out of results is not "gone".** Search results shift with relevance and paging. Use `ends_at`, or a later per-item lookup, to decide that a listing has ended.
 
-## eBay integration (step 1)
+## eBay integration (step 1, done)
 
-Use the **Browse API**'s `item_summary/search`. It takes an application token from the OAuth client-credentials grant, which needs a developer account at developer.ebay.com and no user sign-in. Check these details against eBay's current docs while building; they are from memory:
+`internal/ebay` uses the **Browse API**'s `item_summary/search`, with an application token from the OAuth client-credentials grant. That needs a developer account at developer.ebay.com and no user sign-in.
 
-- Token: `POST https://api.ebay.com/identity/v1/oauth2/token` with basic auth `client_id:client_secret`, `grant_type=client_credentials`, `scope=https://api.ebay.com/oauth/api_scope`. Cache it until shortly before `expires_in`.
-- Search: `GET https://api.ebay.com/buy/browse/v1/item_summary/search?q=…&category_ids=…&filter=…&limit=…`, with the header `X-EBAY-C-MARKETPLACE-ID: EBAY_US`. The filter is a comma-separated list such as `price:[10..200],priceCurrency:USD,conditions:{USED},buyingOptions:{FIXED_PRICE|BEST_OFFER}`.
-- Mind the daily call quota. A run fetches at most a few pages (say 200 items), and watching runs a few times a day, not every minute.
-- **Sold prices are not in the Browse API.** As far as I know they come from the Marketplace Insights API, which eBay restricts. Until then, the price history here is asking prices over time, not what things sold for.
+- **Token:** `POST {base}/identity/v1/oauth2/token`, with basic auth `client_id:client_secret`, `grant_type=client_credentials` and `scope=https://api.ebay.com/oauth/api_scope`. The client caches the token and renews it five minutes before `expires_in`. If eBay answers 401 anyway, the client drops the token and retries once.
+- **Search:** `GET {base}/buy/browse/v1/item_summary/search` with `q`, `category_ids`, `filter`, `limit` (at most 200) and `offset`, plus the header `X-EBAY-C-MARKETPLACE-ID`. A `Search` pages until it has `MaxItems` (default 200, capped at 1000) or eBay runs out.
+- **Filter:** `ebay.Filter` builds strings like `buyingOptions:{AUCTION|FIXED_PRICE},conditions:{USED},price:[10.00..200.00],priceCurrency:USD`. A minimum alone is `price:[10.00]` and a maximum alone is `price:[..50.00]`.
+- **"Any buying option" is sent explicitly.** With no `buyingOptions` filter, eBay returns fixed-price listings only, so a search that leaves buying options empty sends all three.
+- **One category per request.** A search with several categories runs once per category and merges the results, keeping an item's first sighting. That costs a call per category, and it is correct whether or not eBay accepts several categories in one request.
+- **Mapping an item:** prices arrive as decimal strings, and `ebay.Cents` parses them without going through a float. An auction with no Buy It Now is priced at `currentBidPrice`. Shipping is the first option's `shippingCost`; when there is none (calculated shipping), it is unknown (`nil`), not free. `feedbackPercentage` is a string, and `itemEndDate` is RFC 3339. The whole summary is kept in `Item.Raw`, which becomes `listings.data`.
+- **Errors:** eBay's `{"errors":[…]}` bodies become an `*ebay.APIError` with their messages. A 429 is `ebay.ErrRateLimited`. Missing credentials give `ebay.ErrNotConfigured`, so the app runs without them, and endpoints will turn that into a clear message.
+- **Config:** `ebay.FromEnv` reads `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`, plus `EBAY_ENV=sandbox` for the sandbox host or `EBAY_API_BASE` to point it anywhere else.
+- **Tests:** `ebaytest.New(t)` is a fake eBay (token and search) with eBay's response shapes, paging and error bodies. It records every request so tests can check the filter sent, and it can revoke a token or fail with a status. Later endpoint and end-to-end tests use the same fake.
+- **Quota:** a run fetches one page (200 items) by default, and watching should run a few times a day, not every minute.
 
-Shape: `internal/ebay` holds a `Client` interface (`Search(ctx, Query) ([]Item, error)`) with an HTTP implementation configured from `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` and an overridable base URL, so tests point it at an `httptest` server that serves canned JSON. Endpoints take the client the way they take a Store: as a narrow interface field. The REST server, MCP and pages get the same one from `web.New`. Without credentials the app still runs, and the run endpoints return a clear "eBay is not configured" error.
+**What was checked, and what was not.** The response field names (`itemSummaries`, `price.value` as a string, `currentBidPrice`, `shippingOptions[].shippingCost`, `seller.feedbackPercentage`, `itemEndDate`) and the fixed-price-only default were checked against published descriptions of the API. eBay's own developer site could not be reached from the build environment, so the token URL, the marketplace header and the price-range syntax are from memory. **Run one real search with sandbox or production credentials before relying on it.**
+
+**Sold prices are not in the Browse API.** As far as I know they come from the Marketplace Insights API, which eBay restricts. So the price history here is asking prices over time, not what things sold for.
 
 ## Running a search (steps 2 and 3)
 
@@ -95,7 +103,7 @@ They stay separate apps (see the README for why). Claude joins them in conversat
 
 ## Build order
 
-1. `internal/ebay`: token and search, against a fake server in tests.
+1. ~~`internal/ebay`: token and search, against a fake server in tests.~~ Done.
 2. `search_ebay` and its REST operation (stores nothing).
 3. `run_search`, matches, `set_match_status`, `get_listing`, `list_runs`.
 4. Match grid and listing pages.

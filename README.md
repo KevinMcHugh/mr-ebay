@@ -4,7 +4,7 @@ Your eBay shopping, kept by a small server that Claude talks to over the [Model 
 
 One Go binary serves the pages, a JSON API and MCP, and deploys to a [sprites.dev](https://sprites.dev) sprite. It was created from [app-template](https://github.com/KevinMcHugh/app-template) (at 17e2fbf), so its architecture, auth and deploy are the template's. [docs/architecture.md](docs/architecture.md) explains them.
 
-**Status:** saved searches work end to end (REST, MCP, pages, tests). The eBay client, matches, price history and watching are designed but not built yet. [docs/design.md](docs/design.md) has the schema, the plan and the build order.
+**Status:** saved searches work end to end (REST, MCP, pages, tests). The eBay client is built and tested against a fake eBay, but no endpoint calls it yet. Matches, price history and watching are designed but not built. [docs/design.md](docs/design.md) has the schema, the plan and the build order.
 
 ## Why it is its own app
 
@@ -44,6 +44,7 @@ internal/auth/          key/token formats, middleware, who-is-calling context
 internal/oauth/         the OAuth 2.1 server claude.ai needs
 internal/server/        Endpoint contract, the composed REST server, one package per resource
 internal/appmcp/        MCP tools over the same endpoints
+internal/ebay/          the eBay client (token, search); ebaytest/ is a fake eBay for tests
 internal/web/           the router, the pages (templates/), end-to-end tests
 internal/api/gen/       oapi-codegen output: do not edit
 internal/db/gen/        sqlc output: do not edit

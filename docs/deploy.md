@@ -33,10 +33,12 @@ sprite exec -- bash -lc "~/$APP/bin/server keys create --name you"   # SAVE THE 
 sprite exec -- bash -lc "/.sprite/bin/sprite-env services create $APP \
   --cmd /home/sprite/$APP/bin/server --dir /home/sprite/$APP \
   --needs postgres --http-port 8080 \
-  --env 'DATABASE_URL=$DSN,PORT=8080,PUBLIC_URL=https://$APP-<org>.sprites.app' \
+  --env 'DATABASE_URL=$DSN,PORT=8080,PUBLIC_URL=https://$APP-<org>.sprites.app,EBAY_CLIENT_ID=…,EBAY_CLIENT_SECRET=…' \
   --no-stream"
 sprite config update -s $APP --url-auth public
 ```
+
+`EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` are the production keyset from developer.ebay.com. Add `EBAY_ENV=sandbox` to use sandbox keys. Without them the app still runs, but cannot search eBay.
 
 The sprite needs the Go version in `go.mod`. `go build` fetches that toolchain itself if the installed Go is older.
 
