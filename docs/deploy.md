@@ -59,14 +59,16 @@ What the connector cannot do is change the sprite's URL auth. A new sprite's URL
 
 A push to `main` redeploys, once CI is set up:
 
-1. In the GitHub repo's Settings → Secrets and variables → Actions, add the **variable** `SPRITE_NAME` (here `myapp`).
+1. In the GitHub repo's Settings → Secrets and variables → Actions, add the **variable** `SPRITE_NAME` = `mcp-mr-ebay`.
 2. Create a token at [sprites.dev/account](https://sprites.dev/account) for the org that owns the sprite, and save it as the **secret** `SPRITES_TOKEN`.
 
-Until `SPRITE_NAME` is set, the deploy job is skipped and only the tests run. To redeploy without a push, use "Run workflow" on the Actions tab, which works from the GitHub mobile app. By hand, the script is the whole redeploy: `sprite exec -s myapp -- bash -lc '~/myapp/deploy/redeploy.sh'`.
+Until `SPRITE_NAME` is set, the deploy job is skipped and only the tests run. To redeploy without a push, use "Run workflow" on the Actions tab, which works from the GitHub mobile app. By hand, the script is the whole redeploy: `sprite exec -s mcp-mr-ebay -- bash -lc '~/mcp-mr-ebay/deploy/redeploy.sh'`.
+
+The repo has no `main` yet: everything so far is on `claude/peaceful-sagan-13fro6`, which is what the sprite runs. CI deploys start with the first push to `main`, and the first one moves the sprite's checkout onto `main`.
 
 `deploy/redeploy.sh`:
 
-1. fast-forwards the checkout to its branch on `origin` (whatever it has checked out; set `BRANCH` to override) and re-runs the pulled copy of itself, so a change to the deploy steps applies in the same deploy;
+1. fast-forwards the checkout to `BRANCH` on `origin` and re-runs the pulled copy of itself, so a change to the deploy steps applies in the same deploy. `BRANCH` defaults to whatever the checkout has out. CI sets it to `main`, which also moves a checkout that was on another branch (say, the feature branch a first deploy came from) over to `main`. Like the merge, the switch refuses to run over local edits;
 2. takes a sprite checkpoint named for the commit (`sprite-env checkpoints list`, then `sprite-env checkpoints restore <id>` to go back);
 3. reinstalls `run-postgres.sh` and restarts postgres, but only if that file changed;
 4. waits for postgres, then runs `dbmate up`;
@@ -76,6 +78,7 @@ Until `SPRITE_NAME` is set, the deploy job is skipped and only the tests run. To
 ## Why it is built this way
 
 - **The binary is built on the sprite, not in CI.** Deploying stays "run one script", whether CI or a person runs it, and the binary's VCS stamp matches the checkout it runs from.
+- **Deploys run from GitHub Actions, as Creature Lab's do.** `.github/workflows/ci.yml` tests every push and pull request against a Postgres service container. After a push to `main`, its deploy job installs the `sprite` CLI on the runner, signs in with `SPRITES_TOKEN`, and runs `redeploy.sh` on the sprite over `sprite exec`. Only `main` deploys; a branch deploys by hand or through the Fly.io connector. The same steps have deployed Creature Lab from mars-sim's workflow since its first run.
 - **CI pushes; the sprite does not poll.** A paused sprite's timers do not fire, and keeping it awake to poll costs more than it is worth. `sprite exec` wakes it.
 - **Deploys queue and never cancel each other** (`cancel-in-progress: false`). A deploy killed after migrating but before restarting is worse than one that waits.
 - **`--ff-only`, not `reset --hard`.** If someone edits the checkout on the sprite, the deploy stops instead of throwing the edit away.
