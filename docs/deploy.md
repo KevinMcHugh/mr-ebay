@@ -44,6 +44,15 @@ The sprite needs the Go version in `go.mod`. `go build` fetches that toolchain i
 
 For someone else, mint an invite they paste when connecting Claude: `sprite exec -s myapp -- bash -lc '~/myapp/bin/server invites create --note ana --expires-in 168h'`.
 
+## Deploying through the Fly.io MCP connector
+
+Claude can do the first deploy itself with the Fly.io connector, as it did for the live instance (sprite `mcp-mr-ebay`, `https://mcp-mr-ebay-b2mxg.sprites.app`). Two things differ from the CLI recipe above:
+
+- **Names.** The connector can only create and reach sprites whose names start with its grant's prefix (`mcp-`), so the sprite, its service, the checkout (`~/mcp-mr-ebay`) and the database are all named `mcp-mr-ebay`. `redeploy.sh` derives all four from the checkout's directory name, so nothing else needs changing.
+- **Config.** The connector's `service_create` has no environment option. The service runs `~/bin/run-mr-ebay.sh`, which sources `~/.mr-ebay.env` (mode 0600, outside the checkout so a pull never touches it) and execs `bin/server serve`. Put `DATABASE_URL`, `PORT`, `PUBLIC_URL` and the eBay keys there, quoting any value with shell characters: the database URL's `&` would otherwise background the line. Restart after editing: `sprite-env services restart mcp-mr-ebay`.
+
+What the connector cannot do is change the sprite's URL auth. A new sprite's URL is private (`auth: sprite`), and claude.ai cannot reach it until someone with the CLI runs `sprite config update -s mcp-mr-ebay --url-auth public` once.
+
 ## Redeploys
 
 A push to `main` redeploys, once CI is set up:
@@ -55,7 +64,7 @@ Until `SPRITE_NAME` is set, the deploy job is skipped and only the tests run. To
 
 `deploy/redeploy.sh`:
 
-1. fast-forwards the checkout to `origin/main` and re-runs the pulled copy of itself, so a change to the deploy steps applies in the same deploy;
+1. fast-forwards the checkout to its branch on `origin` (whatever it has checked out; set `BRANCH` to override) and re-runs the pulled copy of itself, so a change to the deploy steps applies in the same deploy;
 2. takes a sprite checkpoint named for the commit (`sprite-env checkpoints list`, then `sprite-env checkpoints restore <id>` to go back);
 3. reinstalls `run-postgres.sh` and restarts postgres, but only if that file changed;
 4. waits for postgres, then runs `dbmate up`;
