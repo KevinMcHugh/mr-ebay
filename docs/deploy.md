@@ -25,9 +25,11 @@ sprite exec -- bash -lc '/.sprite/bin/sprite-env services create postgres --cmd 
 sprite exec -- bash -lc "sudo -u postgres createuser -s sprite; sudo -u postgres createdb -O sprite $APP"
 
 DSN="postgres:///$APP?host=/var/run/postgresql&sslmode=disable"
-sprite exec -- bash -lc "echo 'export DATABASE_URL=\"$DSN\"' >> ~/.profile"
-sprite exec -- bash -lc "cd ~/$APP && dbmate --migrations-dir db/migrations --no-dump-schema up && go build -o bin/server ./cmd/server"
-sprite exec -- bash -lc "~/$APP/bin/server keys create --name you"   # SAVE THE KEY
+# Config goes on the service (--env) and nowhere else: no env files, no
+# exports in ~/.profile. See docs/configuration.md. One-off commands get
+# DATABASE_URL inline.
+sprite exec -- bash -lc "cd ~/$APP && DATABASE_URL='$DSN' dbmate --migrations-dir db/migrations --no-dump-schema up && go build -o bin/server ./cmd/server"
+sprite exec -- bash -lc "DATABASE_URL='$DSN' ~/$APP/bin/server keys create --name you"   # SAVE THE KEY
 
 # PUBLIC_URL must be the https URL, because OAuth discovery advertises it.
 sprite exec -- bash -lc "/.sprite/bin/sprite-env services create $APP \
@@ -38,7 +40,7 @@ sprite exec -- bash -lc "/.sprite/bin/sprite-env services create $APP \
 sprite config update -s $APP --url-auth public
 ```
 
-`EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` are the production keyset from developer.ebay.com. Add `EBAY_ENV=sandbox` to use sandbox keys. Without them the app still runs, but cannot search eBay.
+`EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` are the production keyset from developer.ebay.com. They go in the service's `--env` like everything else, never in a file ([configuration.md](configuration.md)). Add `EBAY_ENV=sandbox` to use sandbox keys. Without them the app still runs, but cannot search eBay.
 
 The sprite needs the Go version in `go.mod`. `go build` fetches that toolchain itself if the installed Go is older.
 
@@ -49,7 +51,7 @@ For someone else, mint an invite they paste when connecting Claude: `sprite exec
 Claude can do the first deploy itself with the Fly.io connector, as it did for the live instance (sprite `mcp-mr-ebay`, `https://mcp-mr-ebay-b2mxg.sprites.app`). Two things differ from the CLI recipe above:
 
 - **Names.** The connector can only create and reach sprites whose names start with its grant's prefix (`mcp-`), so the sprite, its service, the checkout (`~/mcp-mr-ebay`) and the database are all named `mcp-mr-ebay`. `redeploy.sh` derives all four from the checkout's directory name, so nothing else needs changing.
-- **Config.** The connector's `service_create` has no environment option, so the service is created from inside the sprite, through the connector's `exec`, with `sprite-env services create mcp-mr-ebay --cmd /home/sprite/mcp-mr-ebay/bin/server --args serve --dir /home/sprite/mcp-mr-ebay --needs postgres --http-port 8080 --env 'DATABASE_URL=…,PORT=8080,PUBLIC_URL=…'`. To change a value, delete the service and create it again with the new `--env`. `--env` is comma-separated, so no value may contain a comma. **No env files:** an earlier version of this setup sourced config from a dotfile in the home directory, and that was removed. Config lives on the service definition and nowhere else. eBay credentials are not set yet; where they go is still to be decided.
+- **Config.** The connector's `service_create` has no environment option, so the service is created from inside the sprite, through the connector's `exec`, with `sprite-env services create mcp-mr-ebay --cmd /home/sprite/mcp-mr-ebay/bin/server --args serve --dir /home/sprite/mcp-mr-ebay --needs postgres --http-port 8080 --env 'DATABASE_URL=…,PORT=8080,PUBLIC_URL=…'`. To change a value, delete the service and create it again with the new `--env`. `--env` is comma-separated, so no value may contain a comma. **No env files:** an earlier version of this setup sourced config from a dotfile in the home directory, and that was removed. Config lives on the service definition and nowhere else. eBay credentials go in the same `--env` ([configuration.md](configuration.md) has the command); they are not set yet.
 
 What the connector cannot do is change the sprite's URL auth. A new sprite's URL is private (`auth: sprite`), and claude.ai cannot reach it until someone with the CLI runs `sprite config update -s mcp-mr-ebay --url-auth public` once.
 

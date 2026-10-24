@@ -70,5 +70,6 @@ internal/db/gen/        sqlc output: do not edit
 - [Architecture](docs/architecture.md): the layers, the request flow, and why it is built this way
 - [Adding a resource](docs/adding-a-resource.md): the end-to-end recipe
 - [Auth](docs/auth.md): keys, OAuth, invites, sessions, and public versus private
-- [Deploy](docs/deploy.md): the sprites.dev recipe and CI redeploys
+- [Deploy](docs/deploy.md): the sprites.dev recipe (by CLI or through the Fly.io MCP connector) and CI redeploys
+- [Configuration](docs/configuration.md): config and secrets, eBay keys included, live on the sprite service's environment, never in env files
 - [CLAUDE.md](CLAUDE.md): orientation for Claude Code sessions

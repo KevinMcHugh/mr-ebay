@@ -21,6 +21,8 @@ DB_NAME="${DB_NAME:-$APP}"
 # following it; CI deploys main.
 BRANCH="${BRANCH:-$(git -C "$REPO" rev-parse --abbrev-ref HEAD)}"
 SPRITE_ENV="${SPRITE_ENV:-/.sprite/bin/sprite-env}"
+# Only dbmate below reads this; the running app gets its own from the
+# service's --env (docs/configuration.md).
 export DATABASE_URL="${DATABASE_URL:-postgres:///$DB_NAME?host=/var/run/postgresql&sslmode=disable}"
 
 # Pull first, then run the pulled copy of this script, so a change to the
