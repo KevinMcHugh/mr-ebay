@@ -1,7 +1,10 @@
 {{define "title"}}{{.Search.Name}} · {{.AppName}}{{end}}
 {{define "content"}}
 <p><a href="/">← All searches</a></p>
-<h1>{{.Search.Name}}</h1>
+<div class="row" style="justify-content:space-between">
+  <h1>{{.Search.Name}}</h1>
+  <form method="POST" action="/searches/{{.Search.ID}}/run" class="inline"><button type="submit">Run now</button></form>
+</div>
 <p class="muted row" style="font-size:.85rem">
   {{if .Search.Watch}}<span class="tag on">watching</span>{{end}}
   <span>{{if .Search.LastRunAt}}Last run {{.Search.LastRunAt.Format "2006-01-02 15:04"}}{{else}}Never run{{end}}</span>
@@ -19,15 +22,45 @@
   </dl>
   {{if .Search.Wants}}<div class="body">{{.Search.Wants}}</div>{{end}}
 </div>
-<p class="muted">Matches show here once searches run against eBay (docs/design.md).</p>
+
+<h2>Matches</h2>
+<nav class="tabs">
+  {{$tab := .Tab}}{{$id := .Search.ID}}{{$new := .Search.NewCount}}
+  {{range .Tabs}}<a href="/searches/{{$id}}?status={{.}}"{{if eq . $tab}} class="active" aria-current="page"{{end}}>{{.}}{{if and (eq . "new") $new}} ({{$new}}){{end}}</a>{{end}}
+</nav>
+{{if .NewIDs}}
+<form method="POST" action="/matches/status" class="row" style="margin:.5rem 0">
+  {{range .NewIDs}}<input type="hidden" name="ids" value="{{.}}">{{end}}
+  <input type="hidden" name="status" value="seen"><input type="hidden" name="back" value="{{.Path}}">
+  <button class="small ghost" type="submit">Mark these {{len .NewIDs}} seen</button>
+</form>
+{{end}}
+{{if .Matches}}
+<div class="matches">
+  {{$back := .Path}}{{range .Matches}}{{template "matchCard" (card . $back)}}{{end}}
+</div>
+{{else}}
+<div class="panel muted">{{if .Search.LastRunAt}}No {{if ne .Tab "all"}}{{.Tab}} {{end}}matches.{{else}}This search has not run yet. Run it to fetch matches from eBay.{{end}}</div>
+{{end}}
+
+{{if .Runs}}
+<h2>Recent runs</h2>
+<div class="table-wrap"><table class="runs">
+  <thead><tr><th>Started</th><th>By</th><th>Results</th><th>New</th><th>Drops</th><th>Error</th></tr></thead>
+  <tbody>
+  {{range .Runs}}<tr{{if .Error}} class="err"{{end}}><td>{{.StartedAt.Format "Jan 2 15:04"}}</td><td>{{.Trigger}}</td><td>{{.ResultCount}}</td><td>{{.NewCount}}</td><td>{{.PriceDropCount}}</td><td>{{.Error}}</td></tr>{{end}}
+  </tbody>
+</table></div>
+{{end}}
+
 <details class="panel">
-  <summary>Edit</summary>
+  <summary>Edit search</summary>
   <form method="POST" action="/searches/{{.Search.ID}}" class="stack" style="margin-top:.75rem">
     {{template "searchFields" .Form}}
     <div><button type="submit">Save</button></div>
   </form>
 </details>
 <form method="POST" action="/searches/{{.Search.ID}}/delete" class="inline">
-  <button class="danger" type="submit">Delete</button>
+  <button class="danger" type="submit">Delete search</button>
 </form>
 {{end}}

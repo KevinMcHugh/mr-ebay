@@ -1,0 +1,26 @@
+{{/* Shared pieces: a match's card, and the buttons that move a match to
+     another status. Every button is its own form, because the pages run
+     no script. */}}
+{{define "statusButtons"}}
+<div class="row buttons">
+  {{if ne .Status "seen"}}<form method="POST" action="/matches/status" class="inline"><input type="hidden" name="ids" value="{{.ID}}"><input type="hidden" name="status" value="seen"><input type="hidden" name="back" value="{{.Back}}"><button class="small ghost" type="submit">Seen</button></form>{{end}}
+  {{if ne .Status "starred"}}<form method="POST" action="/matches/status" class="inline"><input type="hidden" name="ids" value="{{.ID}}"><input type="hidden" name="status" value="starred"><input type="hidden" name="back" value="{{.Back}}"><button class="small ghost" type="submit">★ Star</button></form>{{end}}
+  {{if ne .Status "dismissed"}}<form method="POST" action="/matches/status" class="inline"><input type="hidden" name="ids" value="{{.ID}}"><input type="hidden" name="status" value="dismissed"><input type="hidden" name="back" value="{{.Back}}"><button class="small ghost" type="submit">Dismiss</button></form>{{end}}
+  {{if ne .Status "new"}}<form method="POST" action="/matches/status" class="inline"><input type="hidden" name="ids" value="{{.ID}}"><input type="hidden" name="status" value="new"><input type="hidden" name="back" value="{{.Back}}"><button class="small ghost" type="submit">Mark new</button></form>{{end}}
+</div>
+{{end}}
+
+{{define "matchCard"}}{{with .M}}
+<article class="match status-{{.Status}}">
+  <a class="photo" href="{{.Listing.PageURL}}">{{if .Listing.ImageURL}}<img src="{{.Listing.ImageURL}}" alt="" loading="lazy">{{else}}<span class="muted">no photo</span>{{end}}</a>
+  <div class="match-body">
+    <h3><a href="{{.Listing.PageURL}}">{{.Listing.Title}}</a></h3>
+    <div class="price">{{money .Listing.TotalCents .Listing.Currency}}</div>
+    <div class="muted small">{{money .Listing.PriceCents .Listing.Currency}}, {{shipping .Listing.ShippingCents .Listing.Currency}}</div>
+    <div class="muted small">{{.Listing.Condition}}{{range .Listing.BuyingOptions}} · {{.}}{{end}}</div>
+    <div class="muted small">{{.Listing.Seller}}{{with pct .Listing.SellerFeedbackPct}} ({{.}}){{end}}{{with .Listing.EndsAt}} · ends {{.Format "Jan 2 15:04"}}{{end}}</div>
+    <div class="row small"><span class="tag{{if eq .Status "new"}} on{{end}}">{{.Status}}</span><span class="muted">found {{.FirstSeenAt.Format "Jan 2"}}</span><a href="{{.Listing.URL}}" rel="noopener noreferrer" target="_blank">eBay ↗</a></div>
+    {{template "statusButtons" (buttons .ID .Status $.Back)}}
+  </div>
+</article>
+{{end}}{{end}}

@@ -98,6 +98,9 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/searches", s.createSearch)
 		r.Post("/searches/{id}", s.updateSearch)
 		r.Post("/searches/{id}/delete", s.deleteSearch)
+		r.Post("/searches/{id}/run", s.runSearch)
+		r.Post("/matches/status", s.setMatchStatus)
+		r.Get("/listings/{id}", s.listingPage)
 	})
 	return r
 }
@@ -139,10 +142,11 @@ func requestOrigin(r *http.Request) string {
 }
 
 // pageHeaders forbids every script on the pages. Nothing on them needs one,
-// and much of what they show is text a model wrote.
+// and much of what they show is text a model or a seller wrote. Images may
+// also come from eBay's image host, for listing photos.
 func pageHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src 'self' data: https://i.ebayimg.com; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "same-origin")
 		next.ServeHTTP(w, r)

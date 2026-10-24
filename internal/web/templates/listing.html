@@ -1,0 +1,45 @@
+{{define "title"}}{{.Detail.Listing.Title}} · {{.AppName}}{{end}}
+{{define "content"}}
+{{with .Detail.Listing}}
+<div class="listing-head">
+  <div class="photo big">{{if .ImageURL}}<img src="{{.ImageURL}}" alt="">{{else}}<span class="muted">no photo</span>{{end}}</div>
+  <div>
+    <h1>{{.Title}}</h1>
+    <div class="price">{{money .TotalCents .Currency}}</div>
+    <p class="muted">{{money .PriceCents .Currency}}, {{shipping .ShippingCents .Currency}}</p>
+    <dl class="facts">
+      <dt>Condition</dt><dd>{{.Condition}}</dd>
+      <dt>Buying</dt><dd>{{join .BuyingOptions ", "}}</dd>
+      <dt>Seller</dt><dd>{{.Seller}}{{with pct .SellerFeedbackPct}} ({{.}} positive){{end}}</dd>
+      {{with .EndsAt}}<dt>Ends</dt><dd>{{.Format "2006-01-02 15:04 MST"}}</dd>{{end}}
+      {{with .FirstSeenAt}}<dt>First seen</dt><dd>{{.Format "2006-01-02 15:04"}}</dd>{{end}}
+      {{with .LastSeenAt}}<dt>Last seen</dt><dd>{{.Format "2006-01-02 15:04"}}</dd>{{end}}
+      <dt>eBay item</dt><dd><code class="id">{{.EbayItemID}}</code></dd>
+    </dl>
+    <p><a class="btn" href="{{.URL}}" rel="noopener noreferrer" target="_blank">Open on eBay ↗</a></p>
+  </div>
+</div>
+{{end}}
+
+<h2>Found by</h2>
+{{$back := .Path}}
+<div class="list">
+{{range .Detail.Matches}}
+  <div class="card">
+    <div class="row"><a href="/searches/{{.SearchID}}">{{.SearchName}}</a><span class="tag{{if eq .Status "new"}} on{{end}}">{{.Status}}</span></div>
+    {{template "statusButtons" (buttons .MatchID .Status $back)}}
+  </div>
+{{else}}
+  <p class="muted">No saved search has this listing any more.</p>
+{{end}}
+</div>
+
+<h2>Price history</h2>
+<p class="muted small">Asking prices, newest first: a row each time a run saw the price change. eBay does not give sold prices here.</p>
+<div class="table-wrap"><table class="runs">
+  <thead><tr><th>Seen</th><th>Price</th><th>Shipping</th><th>Total</th></tr></thead>
+  <tbody>
+  {{range .Detail.PriceHistory}}<tr><td>{{.ObservedAt.Format "2006-01-02 15:04"}}</td><td>{{money .PriceCents .Currency}}</td><td>{{shipping .ShippingCents .Currency}}</td><td>{{money .TotalCents .Currency}}</td></tr>{{end}}
+  </tbody>
+</table></div>
+{{end}}

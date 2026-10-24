@@ -14,8 +14,8 @@ The server does the mechanical work: calling eBay, de-duplicating, tracking pric
 | Schema for searches, listings, matches, price points, runs | **done** (`db/migrations/20261020000001_ebay.sql`) |
 | Saved searches: REST, MCP tools, pages, tests | **done** (`internal/server/searches`) |
 | eBay client and a fake eBay for tests | **done** (`internal/ebay`, `internal/ebay/ebaytest`) |
-| Ad-hoc search, running a saved search, matches, listing detail, run log: REST and MCP | **done** (`internal/server/listings`, `matches`, `runs`); no pages yet |
-| Listing pages with photos and price history | planned, step 4 |
+| Ad-hoc search, running a saved search, matches, listing detail, run log: REST and MCP | **done** (`internal/server/listings`, `matches`, `runs`) |
+| Pages: match grid with run and status buttons, listing page with price history | **done** (`internal/web`) |
 | Watching and alerts | planned, step 5 |
 
 ## Data model
@@ -105,9 +105,22 @@ An alert is a match that is new or whose price dropped, with a total at or below
 
 Each one gets the matching REST operation in `api/openapi.yaml` and drives the same endpoint, as the search tools do.
 
-## Pages (step 4)
+## Pages (step 4, done)
 
-The search page grows a grid of matches (photo, title, total, condition, seller, ends) with seen, star and dismiss buttons, and a listing page with its price history as a plain table. eBay's images are served from `i.ebayimg.com`, so add that host to `img-src` in `pageHeaders`' CSP. Still no script.
+Like everything else, the pages drive the same endpoints through `server.BuildViewModel`, and run no script.
+
+- **Search page** (`/searches/{id}`):
+  - **Run now** posts to `/searches/{id}/run` and comes back to the new matches with "Found N listings: X new, Y price drops." If eBay fails, that is a message on the page rather than an error page, because the run is in the log either way.
+  - **Status tabs:** new, starred, seen, dismissed, all. The page opens on new when there is anything new, and on all otherwise, so it always opens on what needs looking at.
+  - **Match grid:** one card per match, with photo, title, total, price and shipping, condition, buying options, seller and feedback, end time, status, the date first found, and a link to eBay. Its Seen, Star, Dismiss and Mark new buttons are one small form each.
+  - **Mark these N seen:** a single form that clears the new tab in one click.
+  - **Recent runs:** the last five runs, with errors in red.
+- **Listing page** (`/listings/{id}`): the photo and facts, an **Open on eBay** link, every search that found it (each with its status buttons), and the price history as a table.
+- **Status forms** post to `/matches/status` with the match ids, the status, and `back`, the page to return to. `back` goes through `safeNext`, so it can only point at this site. `redirect` keeps `back`'s own query (the tab) and replaces any old message.
+- **CSP:** `img-src` adds `https://i.ebayimg.com` for listing photos. Nothing else changed: still `default-src 'none'`, no script. Listing titles are seller-written text, and html/template escapes them like everything else (a test checks this).
+- **Tests:** `internal/web/pages_e2e_test.go` covers running from the page, the tabs, status changes and where they return to, an off-site `back`, the listing page, a failed run in the log, and signed-out access.
+
+The pages are checked for horizontal overflow at 390 px and 1100 px wide.
 
 ## Using it with inventory
 
@@ -118,5 +131,5 @@ They stay separate apps (see the README for why). Claude joins them in conversat
 1. ~~`internal/ebay`: token and search, against a fake server in tests.~~ Done.
 2. ~~`search_ebay` and its REST operation (stores nothing).~~ Done.
 3. ~~`run_search`, matches, `set_match_status`, `get_listing`, `list_runs`.~~ Done.
-4. Match grid and listing pages.
+4. ~~Match grid and listing pages.~~ Done.
 5. `run_watched_searches`, alerts, and the scheduled task's prompt, which goes in this doc.

@@ -18,6 +18,9 @@ import (
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	"github.com/KevinMcHugh/mr-ebay/internal/auth"
 	"github.com/KevinMcHugh/mr-ebay/internal/server"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/listings"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/matches"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/runs"
 	"github.com/KevinMcHugh/mr-ebay/internal/server/searches"
 )
 
@@ -32,13 +35,48 @@ func parsePages() map[string]*template.Template {
 		"has":           slices.Contains[[]string],
 		"conditions":    func() []string { return searches.Conditions },
 		"buyingOptions": func() []string { return searches.BuyingOptions },
+		"pct":           pct,
+		"shipping":      shipping,
+		"buttons":       func(id, status, back string) statusButtons { return statusButtons{id, status, back} },
+		"card":          func(m matches.Match, back string) matchCard { return matchCard{m, back} },
 	}
 	pages := map[string]*template.Template{}
-	for _, name := range []string{"login", "index", "search"} {
+	for _, name := range []string{"login", "index", "search", "listing"} {
 		pages[name] = template.Must(template.New("layout.html").Funcs(funcs).
-			ParseFS(templateFS, "templates/layout.html", "templates/form.html", "templates/"+name+".html"))
+			ParseFS(templateFS, "templates/layout.html", "templates/form.html", "templates/cards.html", "templates/"+name+".html"))
 	}
 	return pages
+}
+
+// statusButtons is what the "statusButtons" template draws: a form per
+// status a match could move to, each coming back to Back.
+type statusButtons struct{ ID, Status, Back string }
+
+// matchCard is what the "matchCard" template draws: one match, with its
+// status buttons coming back to Back.
+type matchCard struct {
+	M    matches.Match
+	Back string
+}
+
+// pct is a seller's feedback score for reading, "" when eBay gave none.
+func pct(p *float64) string {
+	if p == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*p, 'f', -1, 64) + "%"
+}
+
+// shipping describes a listing's shipping cost.
+func shipping(cents *int64, currency string) string {
+	switch {
+	case cents == nil:
+		return "shipping not given"
+	case *cents == 0:
+		return "free shipping"
+	default:
+		return "+ " + money(*cents, currency) + " shipping"
+	}
 }
 
 // money is cents of a currency for reading: "12.50 USD".
@@ -125,15 +163,24 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	http.Error(w, err.Error(), status)
 }
 
-// redirect sends the browser to path with a one-line message, err or not,
-// that the next page shows (post/redirect/get, with no script and no
-// session state).
+// redirect sends the browser to path (which may carry a query of its own)
+// with a one-line message, err or not, that the next page shows
+// (post/redirect/get, with no script and no session state).
 func redirect(w http.ResponseWriter, r *http.Request, path, msg string, isErr bool) {
-	key := "msg"
-	if isErr {
-		key = "err"
+	u, err := url.Parse(path)
+	if err != nil {
+		u = &url.URL{Path: "/"}
 	}
-	http.Redirect(w, r, path+"?"+key+"="+url.QueryEscape(msg), http.StatusSeeOther)
+	q := u.Query()
+	q.Del("msg")
+	q.Del("err")
+	if isErr {
+		q.Set("err", msg)
+	} else {
+		q.Set("msg", msg)
+	}
+	u.RawQuery = q.Encode()
+	http.Redirect(w, r, u.String(), http.StatusSeeOther)
 }
 
 // ---- searches ---------------------------------------------------------------
@@ -150,13 +197,114 @@ func (s *Server) indexPage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// matchTabs are the search page's status filters, in order. "all" is
+// every status.
+var matchTabs = []string{"new", "starred", "seen", "dismissed", "all"}
+
+// RecentRuns is how many runs the search page lists.
+const RecentRuns = 5
+
 func (s *Server) searchPage(w http.ResponseWriter, r *http.Request) {
-	sr, err := server.BuildViewModel(r.Context(), searches.GetEndpoint{Store: s.Store, Links: s.Links}, apigen.GetSearchRequestObject{SearchId: chi.URLParam(r, "id")})
+	ctx := r.Context()
+	sr, err := server.BuildViewModel(ctx, searches.GetEndpoint{Store: s.Store, Links: s.Links}, apigen.GetSearchRequestObject{SearchId: chi.URLParam(r, "id")})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "search", map[string]any{"Search": sr, "Form": sr})
+	// Open on what needs looking at: new matches when there are any.
+	tab := r.URL.Query().Get("status")
+	if tab == "" {
+		tab = "all"
+		if sr.NewCount > 0 {
+			tab = "new"
+		}
+	}
+	filter := tab
+	if tab == "all" {
+		filter = ""
+	}
+	ms, err := server.BuildViewModel(ctx, matches.ListEndpoint{Store: s.Store, Links: s.Links}, apigen.ListMatchesRequestObject{
+		SearchId: sr.ID, Params: apigen.ListMatchesParams{Status: apigen.MatchStatus(filter)},
+	})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	rs, err := server.BuildViewModel(ctx, runs.ListEndpoint{Store: s.Store}, apigen.ListRunsRequestObject{
+		Params: apigen.ListRunsParams{SearchId: sr.ID, Limit: RecentRuns},
+	})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var newIDs []string
+	for _, m := range ms {
+		if m.Status == "new" {
+			newIDs = append(newIDs, m.ID)
+		}
+	}
+	s.render(w, r, http.StatusOK, "search", map[string]any{
+		"Search": sr, "Form": sr, "Matches": ms, "Tab": tab, "Tabs": matchTabs, "NewIDs": newIDs, "Runs": rs,
+	})
+}
+
+// runSearch runs a search from its page and comes back to its new
+// matches. eBay failing is a message on the page, not an error page: the
+// run is in the log either way.
+func (s *Server) runSearch(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	back := "/searches/" + url.PathEscape(id)
+	res, err := server.BuildViewModel(r.Context(), runs.RunEndpoint{Store: s.Store, Ebay: s.Ebay, Links: s.Links}, apigen.RunSearchRequestObject{SearchId: id})
+	if errors.Is(err, app.ErrUpstream) {
+		redirect(w, r, back, err.Error(), true)
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	msg := fmt.Sprintf("Found %d listing%s: %d new, %d price drop%s.",
+		res.Run.ResultCount, plural(res.Run.ResultCount), res.Run.NewCount, res.Run.PriceDropCount, plural(res.Run.PriceDropCount))
+	redirect(w, r, back+"?status=new", msg, false)
+}
+
+// setMatchStatus marks the posted match ids and goes back where the form
+// came from.
+func (s *Server) setMatchStatus(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	back := safeNext(r.FormValue("back"))
+	status := r.FormValue("status")
+	n, err := server.BuildViewModel(r.Context(), matches.SetStatusEndpoint{Store: s.Store}, apigen.SetMatchStatusRequestObject{
+		Body: &apigen.SetMatchStatusJSONRequestBody{Ids: r.Form["ids"], Status: apigen.MatchStatus(status)},
+	})
+	if errors.Is(err, app.ErrBadInput) {
+		redirect(w, r, back, err.Error(), true)
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	redirect(w, r, back, fmt.Sprintf("Marked %d %s.", n, status), false)
+}
+
+func (s *Server) listingPage(w http.ResponseWriter, r *http.Request) {
+	d, err := server.BuildViewModel(r.Context(), listings.GetEndpoint{Store: s.Store, Links: s.Links}, apigen.GetListingRequestObject{ListingId: chi.URLParam(r, "id")})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, "listing", map[string]any{"Detail": d})
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // searchForm reads the search form. Every field is on the form, so it is

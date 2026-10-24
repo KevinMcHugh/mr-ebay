@@ -4,7 +4,7 @@ Your eBay shopping, kept by a small server that Claude talks to over the [Model 
 
 One Go binary serves the pages, a JSON API and MCP, and deploys to a [sprites.dev](https://sprites.dev) sprite. It was created from [app-template](https://github.com/KevinMcHugh/app-template) (at 17e2fbf), so its architecture, auth and deploy are the template's. [docs/architecture.md](docs/architecture.md) explains them.
 
-**Status:** saved searches, ad-hoc eBay searches, running a saved search (listings, matches, price history, the run log) all work over REST and MCP, tested against Postgres and a fake eBay. Pages for matches and listings, and unattended watching, are designed but not built. The eBay client has not yet made a call to the real eBay. [docs/design.md](docs/design.md) has the schema, the plan and the build order.
+**Status:** saved searches, ad-hoc eBay searches, and running a saved search (listings, matches, price history, the run log) all work over REST, MCP and the pages, tested against Postgres and a fake eBay. Unattended watching is designed but not built. The eBay client has not yet made a call to the real eBay. [docs/design.md](docs/design.md) has the schema, the plan and the build order.
 
 ## Why it is its own app
 
@@ -21,7 +21,7 @@ make dev                 # migrate, then serve on :8080
 make key NAME=you        # in another terminal: mint an api key (printed once)
 ```
 
-Open http://localhost:8080, sign in with the key, and save a search. From a script:
+Open http://localhost:8080, sign in with the key, save a search, and press Run now (with eBay credentials set; see [docs/deploy.md](docs/deploy.md)). From a script:
 
 ```sh
 curl -H "Authorization: Bearer mre_…" localhost:8080/api/searches \
