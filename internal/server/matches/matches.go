@@ -70,7 +70,6 @@ type ListStore interface {
 // ListEndpoint is a page of a search's matches, newest first, optionally
 // of one status.
 type ListEndpoint struct {
-	Store ListStore
 	Links app.Links
 }
 
@@ -79,17 +78,17 @@ func (ListEndpoint) Page(req apigen.ListMatchesRequestObject) app.PageRequest {
 	return app.PageRequest{List: "match", Limit: req.Params.Limit, After: req.Params.After}
 }
 
-func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListMatchesRequestObject) (app.Page[dbgen.MatchesAfterRow], error) {
+func (e ListEndpoint) Interact(ctx context.Context, store ListStore, req apigen.ListMatchesRequestObject) (app.Page[dbgen.MatchesAfterRow], error) {
 	status := string(req.Params.Status)
 	if status != "" {
 		if err := checkStatus(status); err != nil {
 			return app.Page[dbgen.MatchesAfterRow]{}, err
 		}
 	}
-	if _, err := e.Store.GetSearch(ctx, req.SearchId); err != nil {
+	if _, err := store.GetSearch(ctx, req.SearchId); err != nil {
 		return app.Page[dbgen.MatchesAfterRow]{}, app.NotFound(err, "search", req.SearchId)
 	}
-	return e.Store.PageMatches(ctx, req.SearchId, status, e.Page(req))
+	return store.PageMatches(ctx, req.SearchId, status, e.Page(req))
 }
 
 func (e ListEndpoint) Build(p app.Page[dbgen.MatchesAfterRow]) app.Page[Match] {
@@ -110,9 +109,9 @@ type SetStatusStore interface {
 
 // SetStatusEndpoint marks matches with a status. Unknown ids are skipped,
 // and the count says how many changed.
-type SetStatusEndpoint struct{ Store SetStatusStore }
+type SetStatusEndpoint struct{}
 
-func (e SetStatusEndpoint) Interact(ctx context.Context, req apigen.SetMatchStatusRequestObject) (int64, error) {
+func (e SetStatusEndpoint) Interact(ctx context.Context, store SetStatusStore, req apigen.SetMatchStatusRequestObject) (int64, error) {
 	b := req.Body
 	if err := checkStatus(string(b.Status)); err != nil {
 		return 0, err
@@ -120,7 +119,7 @@ func (e SetStatusEndpoint) Interact(ctx context.Context, req apigen.SetMatchStat
 	if len(b.Ids) == 0 || len(b.Ids) > MaxIDs {
 		return 0, fmt.Errorf("%w: send 1-%d ids", app.ErrBadInput, MaxIDs)
 	}
-	return e.Store.SetMatchStatus(ctx, dbgen.SetMatchStatusParams{Status: string(b.Status), Ids: b.Ids})
+	return store.SetMatchStatus(ctx, dbgen.SetMatchStatusParams{Status: string(b.Status), Ids: b.Ids})
 }
 
 func (SetStatusEndpoint) Build(n int64) int64 { return n }

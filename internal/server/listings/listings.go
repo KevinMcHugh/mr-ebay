@@ -125,9 +125,9 @@ type AdHoc struct {
 // SearchEndpoint runs a query against eBay and stores nothing, so Claude
 // can try queries before saving one. Its filters are checked exactly as a
 // saved search's are.
-type SearchEndpoint struct{ Ebay Searcher }
+type SearchEndpoint struct{}
 
-func (e SearchEndpoint) Interact(ctx context.Context, req apigen.SearchEbayRequestObject) (ebay.Result, error) {
+func (e SearchEndpoint) Interact(ctx context.Context, eb Searcher, req apigen.SearchEbayRequestObject) (ebay.Result, error) {
 	p := req.Params
 	f, err := searches.CleanQuery(searches.Fields{
 		Query: p.Q, CategoryIDs: p.CategoryIds, Conditions: p.Conditions, BuyingOptions: p.BuyingOptions,
@@ -140,7 +140,7 @@ func (e SearchEndpoint) Interact(ctx context.Context, req apigen.SearchEbayReque
 	if n <= 0 {
 		n = DefaultAdHocItems
 	}
-	res, err := e.Ebay.Search(ctx, f.EbayQuery(min(n, MaxAdHocItems)))
+	res, err := eb.Search(ctx, f.EbayQuery(min(n, MaxAdHocItems)))
 	if err != nil {
 		return ebay.Result{}, app.Upstream(err)
 	}
@@ -175,7 +175,6 @@ type GetStore interface {
 
 // GetEndpoint is one stored listing in full.
 type GetEndpoint struct {
-	Store GetStore
 	Links app.Links
 }
 
@@ -185,16 +184,16 @@ type detailModel struct {
 	Matches []dbgen.ListMatchesForListingRow
 }
 
-func (e GetEndpoint) Interact(ctx context.Context, req apigen.GetListingRequestObject) (detailModel, error) {
-	l, err := e.Store.GetListing(ctx, req.ListingId)
+func (e GetEndpoint) Interact(ctx context.Context, store GetStore, req apigen.GetListingRequestObject) (detailModel, error) {
+	l, err := store.GetListing(ctx, req.ListingId)
 	if err != nil {
 		return detailModel{}, app.NotFound(err, "listing", req.ListingId)
 	}
-	prices, err := e.Store.ListPricePoints(ctx, l.ID)
+	prices, err := store.ListPricePoints(ctx, l.ID)
 	if err != nil {
 		return detailModel{}, err
 	}
-	ms, err := e.Store.ListMatchesForListing(ctx, l.ID)
+	ms, err := store.ListMatchesForListing(ctx, l.ID)
 	return detailModel{Listing: l, Prices: prices, Matches: ms}, err
 }
 

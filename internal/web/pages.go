@@ -188,7 +188,7 @@ func redirect(w http.ResponseWriter, r *http.Request, path, msg string, isErr bo
 func (s *Server) indexPage(w http.ResponseWriter, r *http.Request) {
 	// A page of searches; ?after= (from the Older searches link) is the next.
 	after := r.URL.Query().Get("after")
-	page, err := server.BuildViewModel(r.Context(), searches.ListEndpoint{Store: s.Store, Links: s.Links}, apigen.ListSearchesRequestObject{
+	page, err := server.BuildViewModel(r.Context(), searches.ListStore(s.Store), searches.ListEndpoint{Links: s.Links}, apigen.ListSearchesRequestObject{
 		Params: apigen.ListSearchesParams{After: after},
 	})
 	if err != nil {
@@ -210,7 +210,7 @@ const RecentRuns = 5
 
 func (s *Server) searchPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	sr, err := server.BuildViewModel(ctx, searches.GetEndpoint{Store: s.Store, Links: s.Links}, apigen.GetSearchRequestObject{SearchId: chi.URLParam(r, "id")})
+	sr, err := server.BuildViewModel(ctx, searches.GetStore(s.Store), searches.GetEndpoint{Links: s.Links}, apigen.GetSearchRequestObject{SearchId: chi.URLParam(r, "id")})
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -230,14 +230,14 @@ func (s *Server) searchPage(w http.ResponseWriter, r *http.Request) {
 	// A page of the tab's matches; ?after= (from the Older matches link) is
 	// the next.
 	after := r.URL.Query().Get("after")
-	ms, err := server.BuildViewModel(ctx, matches.ListEndpoint{Store: s.Store, Links: s.Links}, apigen.ListMatchesRequestObject{
+	ms, err := server.BuildViewModel(ctx, matches.ListStore(s.Store), matches.ListEndpoint{Links: s.Links}, apigen.ListMatchesRequestObject{
 		SearchId: sr.ID, Params: apigen.ListMatchesParams{Status: apigen.MatchStatus(filter), After: after},
 	})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	rs, err := server.BuildViewModel(ctx, runs.ListEndpoint{Store: s.Store}, apigen.ListRunsRequestObject{
+	rs, err := server.BuildViewModel(ctx, runs.ListStore(s.Store), runs.ListEndpoint{}, apigen.ListRunsRequestObject{
 		Params: apigen.ListRunsParams{SearchId: sr.ID, Limit: RecentRuns},
 	})
 	if err != nil {
@@ -262,7 +262,7 @@ func (s *Server) searchPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) runSearch(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	back := "/searches/" + url.PathEscape(id)
-	res, err := server.BuildViewModel(r.Context(), runs.RunEndpoint{Store: s.Store, Ebay: s.Ebay, Links: s.Links}, apigen.RunSearchRequestObject{SearchId: id})
+	res, err := server.BuildViewModel(r.Context(), runs.Deps(s.Store, s.Ebay), runs.RunEndpoint{Links: s.Links}, apigen.RunSearchRequestObject{SearchId: id})
 	if errors.Is(err, app.ErrUpstream) {
 		redirect(w, r, back, err.Error(), true)
 		return
@@ -285,7 +285,7 @@ func (s *Server) setMatchStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	back := safeNext(r.FormValue("back"))
 	status := r.FormValue("status")
-	n, err := server.BuildViewModel(r.Context(), matches.SetStatusEndpoint{Store: s.Store}, apigen.SetMatchStatusRequestObject{
+	n, err := server.BuildViewModel(r.Context(), matches.SetStatusStore(s.Store), matches.SetStatusEndpoint{}, apigen.SetMatchStatusRequestObject{
 		Body: &apigen.SetMatchStatusJSONRequestBody{Ids: r.Form["ids"], Status: apigen.MatchStatus(status)},
 	})
 	if errors.Is(err, app.ErrBadInput) {
@@ -300,7 +300,7 @@ func (s *Server) setMatchStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listingPage(w http.ResponseWriter, r *http.Request) {
-	d, err := server.BuildViewModel(r.Context(), listings.GetEndpoint{Store: s.Store, Links: s.Links}, apigen.GetListingRequestObject{ListingId: chi.URLParam(r, "id")})
+	d, err := server.BuildViewModel(r.Context(), listings.GetStore(s.Store), listings.GetEndpoint{Links: s.Links}, apigen.GetListingRequestObject{ListingId: chi.URLParam(r, "id")})
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -348,7 +348,7 @@ func (s *Server) createSearch(w http.ResponseWriter, r *http.Request) {
 	body, err := searchForm(r)
 	if err == nil {
 		var sr searches.Search
-		sr, err = server.BuildViewModel(r.Context(), searches.CreateEndpoint{Store: s.Store, Links: s.Links}, apigen.CreateSearchRequestObject{Body: &body})
+		sr, err = server.BuildViewModel(r.Context(), searches.CreateStore(s.Store), searches.CreateEndpoint{Links: s.Links}, apigen.CreateSearchRequestObject{Body: &body})
 		if err == nil {
 			redirect(w, r, "/searches/"+url.PathEscape(sr.ID), "Saved.", false)
 			return
@@ -365,7 +365,7 @@ func (s *Server) updateSearch(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	b, err := searchForm(r)
 	if err == nil {
-		_, err = server.BuildViewModel(r.Context(), searches.UpdateEndpoint{Store: s.Store, Links: s.Links}, apigen.UpdateSearchRequestObject{
+		_, err = server.BuildViewModel(r.Context(), searches.UpdateStore(s.Store), searches.UpdateEndpoint{Links: s.Links}, apigen.UpdateSearchRequestObject{
 			SearchId: id,
 			Body: &apigen.SearchUpdate{
 				Name: &b.Name, Query: &b.Query, CategoryIds: &b.CategoryIds, Conditions: &b.Conditions,
@@ -387,7 +387,7 @@ func (s *Server) updateSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteSearch(w http.ResponseWriter, r *http.Request) {
-	if _, err := server.BuildViewModel(r.Context(), searches.DeleteEndpoint{Store: s.Store}, apigen.DeleteSearchRequestObject{SearchId: chi.URLParam(r, "id")}); err != nil {
+	if _, err := server.BuildViewModel(r.Context(), searches.DeleteStore(s.Store), searches.DeleteEndpoint{}, apigen.DeleteSearchRequestObject{SearchId: chi.URLParam(r, "id")}); err != nil {
 		s.fail(w, r, err)
 		return
 	}

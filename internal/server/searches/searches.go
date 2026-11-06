@@ -233,7 +233,6 @@ type ListStore interface {
 
 // ListEndpoint is a page of the saved searches, newest first.
 type ListEndpoint struct {
-	Store ListStore
 	Links app.Links
 }
 
@@ -242,8 +241,8 @@ func (ListEndpoint) Page(req apigen.ListSearchesRequestObject) app.PageRequest {
 	return app.PageRequest{List: "search", Limit: req.Params.Limit, After: req.Params.After}
 }
 
-func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListSearchesRequestObject) (app.Page[Model], error) {
-	rows, err := e.Store.PageSearches(ctx, e.Page(req))
+func (e ListEndpoint) Interact(ctx context.Context, store ListStore, req apigen.ListSearchesRequestObject) (app.Page[Model], error) {
+	rows, err := store.PageSearches(ctx, e.Page(req))
 	return app.MapPage(rows, func(r dbgen.SearchesAfterRow) Model {
 		return Model{Row: dbgen.Search{
 			ID: r.ID, Name: r.Name, Query: r.Query, CategoryIds: r.CategoryIds, Conditions: r.Conditions,
@@ -274,16 +273,15 @@ type GetStore interface {
 
 // GetEndpoint is one saved search.
 type GetEndpoint struct {
-	Store GetStore
 	Links app.Links
 }
 
-func (e GetEndpoint) Interact(ctx context.Context, req apigen.GetSearchRequestObject) (Model, error) {
-	row, err := e.Store.GetSearch(ctx, req.SearchId)
+func (e GetEndpoint) Interact(ctx context.Context, store GetStore, req apigen.GetSearchRequestObject) (Model, error) {
+	row, err := store.GetSearch(ctx, req.SearchId)
 	if err != nil {
 		return Model{}, app.NotFound(err, "search", req.SearchId)
 	}
-	n, err := e.Store.CountNewMatches(ctx, row.ID)
+	n, err := store.CountNewMatches(ctx, row.ID)
 	return Model{Row: row, NewCount: int(n)}, err
 }
 
@@ -304,11 +302,10 @@ type CreateStore interface {
 // CreateEndpoint saves a search. It does not run it: that is RunEndpoint's
 // job, so saving stays free and instant.
 type CreateEndpoint struct {
-	Store CreateStore
 	Links app.Links
 }
 
-func (e CreateEndpoint) Interact(ctx context.Context, req apigen.CreateSearchRequestObject) (Model, error) {
+func (e CreateEndpoint) Interact(ctx context.Context, store CreateStore, req apigen.CreateSearchRequestObject) (Model, error) {
 	b := req.Body
 	f, err := Clean(Fields{
 		Name: b.Name, Query: b.Query, Currency: b.Currency, Marketplace: b.Marketplace, Wants: b.Wants,
@@ -319,7 +316,7 @@ func (e CreateEndpoint) Interact(ctx context.Context, req apigen.CreateSearchReq
 	if err != nil {
 		return Model{}, err
 	}
-	row, err := e.Store.CreateSearch(ctx, dbgen.CreateSearchParams{
+	row, err := store.CreateSearch(ctx, dbgen.CreateSearchParams{
 		ID: xid.New().String(), Name: f.Name, Query: f.Query,
 		CategoryIds: f.CategoryIDs, Conditions: f.Conditions, BuyingOptions: f.BuyingOptions,
 		MinPriceCents: limit(f.MinPriceCents), MaxPriceCents: limit(f.MaxPriceCents),
@@ -348,12 +345,11 @@ type UpdateStore interface {
 // UpdateEndpoint changes whichever fields the request sends. A price of 0
 // removes that limit.
 type UpdateEndpoint struct {
-	Store UpdateStore
 	Links app.Links
 }
 
-func (e UpdateEndpoint) Interact(ctx context.Context, req apigen.UpdateSearchRequestObject) (Model, error) {
-	cur, err := e.Store.GetSearch(ctx, req.SearchId)
+func (e UpdateEndpoint) Interact(ctx context.Context, store UpdateStore, req apigen.UpdateSearchRequestObject) (Model, error) {
+	cur, err := store.GetSearch(ctx, req.SearchId)
 	if err != nil {
 		return Model{}, app.NotFound(err, "search", req.SearchId)
 	}
@@ -373,7 +369,7 @@ func (e UpdateEndpoint) Interact(ctx context.Context, req apigen.UpdateSearchReq
 	if f, err = Clean(f); err != nil {
 		return Model{}, err
 	}
-	row, err := e.Store.UpdateSearch(ctx, dbgen.UpdateSearchParams{
+	row, err := store.UpdateSearch(ctx, dbgen.UpdateSearchParams{
 		ID: cur.ID, Name: f.Name, Query: f.Query,
 		CategoryIds: f.CategoryIDs, Conditions: f.Conditions, BuyingOptions: f.BuyingOptions,
 		MinPriceCents: limit(f.MinPriceCents), MaxPriceCents: limit(f.MaxPriceCents),
@@ -383,7 +379,7 @@ func (e UpdateEndpoint) Interact(ctx context.Context, req apigen.UpdateSearchReq
 	if err != nil {
 		return Model{}, app.NotFound(err, "search", req.SearchId)
 	}
-	n, err := e.Store.CountNewMatches(ctx, row.ID)
+	n, err := store.CountNewMatches(ctx, row.ID)
 	return Model{Row: row, NewCount: int(n)}, err
 }
 
@@ -403,10 +399,10 @@ type DeleteStore interface {
 
 // DeleteEndpoint soft-deletes a search. Its listings stay: another search
 // may have found them too.
-type DeleteEndpoint struct{ Store DeleteStore }
+type DeleteEndpoint struct{}
 
-func (e DeleteEndpoint) Interact(ctx context.Context, req apigen.DeleteSearchRequestObject) (bool, error) {
-	n, err := e.Store.DeleteSearch(ctx, req.SearchId)
+func (e DeleteEndpoint) Interact(ctx context.Context, store DeleteStore, req apigen.DeleteSearchRequestObject) (bool, error) {
+	n, err := store.DeleteSearch(ctx, req.SearchId)
 	if err != nil {
 		return false, err
 	}

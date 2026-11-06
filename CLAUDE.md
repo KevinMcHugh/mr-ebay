@@ -24,7 +24,7 @@ To change something in a generated file, edit its source (the spec, a query or a
 
 `Endpoint[Req, M, VM, Res]` (in `internal/server/endpoint.go`):
 
-- `Interact(ctx, req) (M, error)` does the work through a narrow `Store` interface the endpoint declares itself, listing only the methods it calls. `*app.Store` satisfies them all.
+- `Interact(ctx, store S, req) (M, error)` does the work through the store it is handed: `S` is a narrow interface the endpoint declares itself, listing only the methods it calls, and `*app.Store` satisfies them all. The store is never a field of the endpoint, so `Interact` is the only step that does I/O; the endpoint struct holds only what `Build` and `Render` need (`Links`). Callers convert their store to `S` as they pass it: `Run(ctx, searches.ListStore(s.store), searches.ListEndpoint{Links: s.links}, req)`.
 - `Build(M) VM` is a pure transformation to the view model, which carries JSON tags because MCP returns it as is.
 - `Render(VM) Res` wraps the view model in the generated response type.
 
@@ -34,7 +34,7 @@ Every list is paged: it takes `limit` (default 100, at most 200) and `after`, an
 
 ## eBay
 
-Only `internal/ebay` talks to eBay. Endpoints take it as a narrow `Searcher` interface field, the way they take a Store. Tests use the fake in `internal/ebay/ebaytest`; never call the real eBay from a test.
+Only `internal/ebay` talks to eBay. Endpoints take it the way they take a store, in `Interact`'s argument: a narrow `Searcher` interface on its own (`listings.SearchEndpoint`), or joined with the store (`runs.RunDeps`, built with `runs.Deps(store, ebay)`). Tests use the fake in `internal/ebay/ebaytest`; never call the real eBay from a test.
 
 ## Adding a resource
 
