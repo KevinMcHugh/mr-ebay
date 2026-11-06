@@ -10,10 +10,10 @@ RETURNING *;
 SELECT * FROM searches
 WHERE id = $1 AND deleted_at IS NULL;
 
--- One page of the searches, newest first, with how many matches are still
--- new, after the (created_at, id) of the last search on the page before
--- (app.Paginate).
--- name: PageSearches :many
+-- The searches, newest first, with how many matches are still new, after
+-- the (created_at, id) of the last search on the page before;
+-- app.Store.PageSearches pages them.
+-- name: SearchesAfter :many
 SELECT searches.*,
        (SELECT COUNT(*) FROM matches m
          WHERE m.search_id = searches.id AND m.status = 'new'

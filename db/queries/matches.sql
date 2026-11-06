@@ -15,10 +15,10 @@ UPDATE matches SET last_seen_at = NOW(), updated_at = NOW()
 WHERE search_id = $1 AND listing_id = $2 AND deleted_at IS NULL
 RETURNING *;
 
--- One page of a search's matches with their listings, newest first, after
--- the (first_seen_at, id) of the last match on the page before
--- (app.Paginate). status NULL means every status.
--- name: PageMatches :many
+-- A search's matches with their listings, newest first, after the
+-- (first_seen_at, id) of the last match on the page before;
+-- app.Store.PageMatches pages them. status NULL means every status.
+-- name: MatchesAfter :many
 SELECT sqlc.embed(m), sqlc.embed(l)
 FROM matches m
 JOIN listings l ON l.id = m.listing_id AND l.deleted_at IS NULL

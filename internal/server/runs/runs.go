@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/xid"
 
 	apigen "github.com/KevinMcHugh/mr-ebay/internal/api/gen"
@@ -192,7 +191,7 @@ func (RunEndpoint) Render(vm Result) apigen.RunSearchResponseObject {
 // -----------------------------------------------------------------------------
 
 type ListStore interface {
-	PageRuns(ctx context.Context, arg dbgen.PageRunsParams) ([]dbgen.SearchRun, error)
+	PageRuns(ctx context.Context, searchID string, p app.PageRequest) (app.Page[dbgen.SearchRun], error)
 }
 
 // ListEndpoint is a page of recent runs, newest first, for one search or
@@ -204,26 +203,8 @@ func (ListEndpoint) Page(req apigen.ListRunsRequestObject) app.PageRequest {
 	return app.PageRequest{List: "run", Limit: req.Params.Limit, After: req.Params.After}
 }
 
-// newest is where a page of a list sorted newest first starts.
-type newest struct {
-	At time.Time
-	ID string
-}
-
 func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListRunsRequestObject) (app.Page[dbgen.SearchRun], error) {
-	var search *string
-	if id := req.Params.SearchId; id != "" {
-		search = &id
-	}
-	return app.Paginate(e.Page(req),
-		func(after *newest, limit int32) ([]dbgen.SearchRun, error) {
-			arg := dbgen.PageRunsParams{SearchID: search, Lim: limit}
-			if after != nil {
-				arg.AfterStartedAt, arg.AfterID = pgtype.Timestamptz{Time: after.At, Valid: true}, &after.ID
-			}
-			return e.Store.PageRuns(ctx, arg)
-		},
-		func(r dbgen.SearchRun) newest { return newest{r.StartedAt.Time, r.ID} })
+	return e.Store.PageRuns(ctx, req.Params.SearchId, e.Page(req))
 }
 
 func (ListEndpoint) Build(p app.Page[dbgen.SearchRun]) app.Page[Run] {

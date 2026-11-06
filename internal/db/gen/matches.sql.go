@@ -102,7 +102,7 @@ func (q *Queries) ListMatchesForListing(ctx context.Context, listingID string) (
 	return items, nil
 }
 
-const pageMatches = `-- name: PageMatches :many
+const matchesAfter = `-- name: MatchesAfter :many
 SELECT m.id, m.search_id, m.listing_id, m.status, m.first_seen_at, m.last_seen_at, m.alerted_at, m.created_at, m.updated_at, m.deleted_at, l.id, l.ebay_item_id, l.marketplace, l.title, l.url, l.image_url, l.seller, l.seller_feedback_pct, l.condition, l.buying_options, l.price_cents, l.shipping_cents, l.currency, l.ends_at, l.first_seen_at, l.last_seen_at, l.data, l.created_at, l.updated_at, l.deleted_at
 FROM matches m
 JOIN listings l ON l.id = m.listing_id AND l.deleted_at IS NULL
@@ -114,7 +114,7 @@ ORDER BY m.first_seen_at DESC, m.id DESC
 LIMIT $5
 `
 
-type PageMatchesParams struct {
+type MatchesAfterParams struct {
 	SearchID         string             `json:"search_id"`
 	Status           *string            `json:"status"`
 	AfterID          *string            `json:"after_id"`
@@ -122,16 +122,16 @@ type PageMatchesParams struct {
 	Lim              int32              `json:"lim"`
 }
 
-type PageMatchesRow struct {
+type MatchesAfterRow struct {
 	Match   Match   `json:"match"`
 	Listing Listing `json:"listing"`
 }
 
-// One page of a search's matches with their listings, newest first, after
-// the (first_seen_at, id) of the last match on the page before
-// (app.Paginate). status NULL means every status.
-func (q *Queries) PageMatches(ctx context.Context, arg PageMatchesParams) ([]PageMatchesRow, error) {
-	rows, err := q.db.Query(ctx, pageMatches,
+// A search's matches with their listings, newest first, after the
+// (first_seen_at, id) of the last match on the page before;
+// app.Store.PageMatches pages them. status NULL means every status.
+func (q *Queries) MatchesAfter(ctx context.Context, arg MatchesAfterParams) ([]MatchesAfterRow, error) {
+	rows, err := q.db.Query(ctx, matchesAfter,
 		arg.SearchID,
 		arg.Status,
 		arg.AfterID,
@@ -142,9 +142,9 @@ func (q *Queries) PageMatches(ctx context.Context, arg PageMatchesParams) ([]Pag
 		return nil, err
 	}
 	defer rows.Close()
-	items := []PageMatchesRow{}
+	items := []MatchesAfterRow{}
 	for rows.Next() {
-		var i PageMatchesRow
+		var i MatchesAfterRow
 		if err := rows.Scan(
 			&i.Match.ID,
 			&i.Match.SearchID,

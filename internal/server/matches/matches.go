@@ -12,7 +12,6 @@ import (
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	dbgen "github.com/KevinMcHugh/mr-ebay/internal/db/gen"
 	"github.com/KevinMcHugh/mr-ebay/internal/server/listings"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // Statuses a match can have. Every match starts new.
@@ -65,7 +64,7 @@ func checkStatus(s string) error {
 
 type ListStore interface {
 	GetSearch(ctx context.Context, id string) (dbgen.Search, error)
-	PageMatches(ctx context.Context, arg dbgen.PageMatchesParams) ([]dbgen.PageMatchesRow, error)
+	PageMatches(ctx context.Context, searchID, status string, p app.PageRequest) (app.Page[dbgen.MatchesAfterRow], error)
 }
 
 // ListEndpoint is a page of a search's matches, newest first, optionally
@@ -80,36 +79,21 @@ func (ListEndpoint) Page(req apigen.ListMatchesRequestObject) app.PageRequest {
 	return app.PageRequest{List: "match", Limit: req.Params.Limit, After: req.Params.After}
 }
 
-// newest is where a page of a list sorted newest first starts.
-type newest struct {
-	At time.Time
-	ID string
-}
-
-func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListMatchesRequestObject) (app.Page[dbgen.PageMatchesRow], error) {
-	var status *string
-	if s := string(req.Params.Status); s != "" {
-		if err := checkStatus(s); err != nil {
-			return app.Page[dbgen.PageMatchesRow]{}, err
+func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListMatchesRequestObject) (app.Page[dbgen.MatchesAfterRow], error) {
+	status := string(req.Params.Status)
+	if status != "" {
+		if err := checkStatus(status); err != nil {
+			return app.Page[dbgen.MatchesAfterRow]{}, err
 		}
-		status = &s
 	}
 	if _, err := e.Store.GetSearch(ctx, req.SearchId); err != nil {
-		return app.Page[dbgen.PageMatchesRow]{}, app.NotFound(err, "search", req.SearchId)
+		return app.Page[dbgen.MatchesAfterRow]{}, app.NotFound(err, "search", req.SearchId)
 	}
-	return app.Paginate(e.Page(req),
-		func(after *newest, limit int32) ([]dbgen.PageMatchesRow, error) {
-			arg := dbgen.PageMatchesParams{SearchID: req.SearchId, Status: status, Lim: limit}
-			if after != nil {
-				arg.AfterFirstSeenAt, arg.AfterID = pgtype.Timestamptz{Time: after.At, Valid: true}, &after.ID
-			}
-			return e.Store.PageMatches(ctx, arg)
-		},
-		func(r dbgen.PageMatchesRow) newest { return newest{r.Match.FirstSeenAt.Time, r.Match.ID} })
+	return e.Store.PageMatches(ctx, req.SearchId, status, e.Page(req))
 }
 
-func (e ListEndpoint) Build(p app.Page[dbgen.PageMatchesRow]) app.Page[Match] {
-	return app.MapPage(p, func(r dbgen.PageMatchesRow) Match { return ToViewModel(r.Match, r.Listing, e.Links) })
+func (e ListEndpoint) Build(p app.Page[dbgen.MatchesAfterRow]) app.Page[Match] {
+	return app.MapPage(p, func(r dbgen.MatchesAfterRow) Match { return ToViewModel(r.Match, r.Listing, e.Links) })
 }
 
 func (ListEndpoint) Render(p app.Page[Match]) apigen.ListMatchesResponseObject {

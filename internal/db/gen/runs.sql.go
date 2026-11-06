@@ -92,7 +92,7 @@ func (q *Queries) MarkSearchRun(ctx context.Context, id string) error {
 	return err
 }
 
-const pageRuns = `-- name: PageRuns :many
+const runsAfter = `-- name: RunsAfter :many
 SELECT r.id, r.search_id, r.trigger, r.started_at, r.finished_at, r.result_count, r.new_count, r.price_drop_count, r.error FROM search_runs r
 JOIN searches s ON s.id = r.search_id AND s.deleted_at IS NULL
 WHERE ($1::CHAR(20) IS NULL OR r.search_id = $1::CHAR(20))
@@ -101,18 +101,18 @@ ORDER BY r.started_at DESC, r.id DESC
 LIMIT $4
 `
 
-type PageRunsParams struct {
+type RunsAfterParams struct {
 	SearchID       *string            `json:"search_id"`
 	AfterID        *string            `json:"after_id"`
 	AfterStartedAt pgtype.Timestamptz `json:"after_started_at"`
 	Lim            int32              `json:"lim"`
 }
 
-// One page of runs, newest first, for one search or (search_id NULL) every
-// live one, after the (started_at, id) of the last run on the page before
-// (app.Paginate).
-func (q *Queries) PageRuns(ctx context.Context, arg PageRunsParams) ([]SearchRun, error) {
-	rows, err := q.db.Query(ctx, pageRuns,
+// Runs, newest first, for one search or (search_id NULL) every live one,
+// after the (started_at, id) of the last run on the page before;
+// app.Store.PageRuns pages them.
+func (q *Queries) RunsAfter(ctx context.Context, arg RunsAfterParams) ([]SearchRun, error) {
+	rows, err := q.db.Query(ctx, runsAfter,
 		arg.SearchID,
 		arg.AfterID,
 		arg.AfterStartedAt,

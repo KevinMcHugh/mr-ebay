@@ -122,7 +122,7 @@ func (q *Queries) GetSearch(ctx context.Context, id string) (Search, error) {
 	return i, err
 }
 
-const pageSearches = `-- name: PageSearches :many
+const searchesAfter = `-- name: SearchesAfter :many
 SELECT searches.id, searches.name, searches.query, searches.category_ids, searches.conditions, searches.buying_options, searches.min_price_cents, searches.max_price_cents, searches.currency, searches.marketplace, searches.wants, searches.watch, searches.alert_below_cents, searches.last_run_at, searches.created_by, searches.created_at, searches.updated_at, searches.deleted_at,
        (SELECT COUNT(*) FROM matches m
          WHERE m.search_id = searches.id AND m.status = 'new'
@@ -134,13 +134,13 @@ ORDER BY created_at DESC, id DESC
 LIMIT $3
 `
 
-type PageSearchesParams struct {
+type SearchesAfterParams struct {
 	AfterID        *string            `json:"after_id"`
 	AfterCreatedAt pgtype.Timestamptz `json:"after_created_at"`
 	Lim            int32              `json:"lim"`
 }
 
-type PageSearchesRow struct {
+type SearchesAfterRow struct {
 	ID              string             `json:"id"`
 	Name            string             `json:"name"`
 	Query           string             `json:"query"`
@@ -162,18 +162,18 @@ type PageSearchesRow struct {
 	NewCount        int32              `json:"new_count"`
 }
 
-// One page of the searches, newest first, with how many matches are still
-// new, after the (created_at, id) of the last search on the page before
-// (app.Paginate).
-func (q *Queries) PageSearches(ctx context.Context, arg PageSearchesParams) ([]PageSearchesRow, error) {
-	rows, err := q.db.Query(ctx, pageSearches, arg.AfterID, arg.AfterCreatedAt, arg.Lim)
+// The searches, newest first, with how many matches are still new, after
+// the (created_at, id) of the last search on the page before;
+// app.Store.PageSearches pages them.
+func (q *Queries) SearchesAfter(ctx context.Context, arg SearchesAfterParams) ([]SearchesAfterRow, error) {
+	rows, err := q.db.Query(ctx, searchesAfter, arg.AfterID, arg.AfterCreatedAt, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []PageSearchesRow{}
+	items := []SearchesAfterRow{}
 	for rows.Next() {
-		var i PageSearchesRow
+		var i SearchesAfterRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
