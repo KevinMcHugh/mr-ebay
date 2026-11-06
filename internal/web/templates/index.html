@@ -1,8 +1,7 @@
 {{define "title"}}Searches · {{.AppName}}{{end}}
 {{define "content"}}
 <h1>Saved searches</h1>
-<p class="muted">{{len .Searches}} search{{if ne (len .Searches) 1}}es{{end}}.</p>
-<details class="panel"{{if not .Searches}} open{{end}}>
+<details class="panel"{{if and (not .Searches) (not .Later)}} open{{end}}>
   <summary>New search</summary>
   <form method="POST" action="/searches" class="stack" style="margin-top:.75rem">
     {{template "searchFields" .Form}}
@@ -23,4 +22,10 @@
   </article>
 {{end}}
 </div>
+{{if or .Next .Later}}
+<p class="row">
+  {{if .Later}}<a href="/">← Newest searches</a>{{end}}
+  {{if .Next}}<a href="/?after={{.Next}}">Older searches →</a>{{end}}
+</p>
+{{end}}
 {{end}}

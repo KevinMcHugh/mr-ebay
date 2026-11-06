@@ -40,8 +40,13 @@ INSERT INTO widgets (id, name, created_by) VALUES ($1, $2, $3) RETURNING *;
 -- name: GetWidget :one
 SELECT * FROM widgets WHERE id = $1 AND deleted_at IS NULL;
 
--- name: ListWidgets :many
-SELECT * FROM widgets WHERE deleted_at IS NULL ORDER BY created_at DESC;
+-- One page of the list, after the key of the last row on the page before
+-- (app.Paginate). The sort ends in the id, so the key is unique per row.
+-- name: PageWidgets :many
+SELECT * FROM widgets WHERE deleted_at IS NULL
+  AND (sqlc.narg(after_id)::CHAR(20) IS NULL OR (created_at, id) < (sqlc.narg(after_created_at)::TIMESTAMPTZ, sqlc.narg(after_id)::CHAR(20)))
+ORDER BY created_at DESC, id DESC
+LIMIT @lim;
 
 -- name: UpdateWidget :one
 UPDATE widgets SET name = COALESCE(sqlc.narg(name), name), updated_at = NOW()
@@ -52,7 +57,7 @@ UPDATE widgets SET deleted_at = NOW(), updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL;
 ```
 
-Every read and write filters `deleted_at IS NULL`.
+Every read and write filters `deleted_at IS NULL`. Flip the comparison in `PageWidgets` (`>` for an ascending sort, `<` for a descending one) to match its order. If other code needs every row at once, add a `ListWidgets` beside it with the same order.
 
 ## 3. Spec
 
@@ -62,6 +67,8 @@ Add paths and schemas to `api/openapi.yaml`, following the searches entries. The
 - Add `security: []` only to make it **public**. Public responses also get `Access-Control-Allow-Origin: *`.
 
 For a PATCH body, mark each optional field `x-go-type-skip-optional-pointer: false`, so "not sent" differs from "sent empty".
+
+A list operation (`listWidgets`) takes `$ref: "#/components/parameters/Limit"` and `After`, its list schema has a required `next`, and it declares the 422; `TestEveryListIsPaged` checks all three.
 
 Name path parameters so they do not collide with schema names: oapi-codegen generates a Go type for both. Creature Lab's `Form` parameter clashed with its `Form` schema, for example.
 
@@ -80,7 +87,8 @@ Create `internal/server/widgets/widgets.go`, using `searches/searches.go` as the
 - a view model `Widget` with JSON tags, `ToViewModel(dbgen.Widget, app.Links) Widget`, and an unexported `toAPI(Widget) apigen.Widget`;
 - for each operation, a narrow `Store` interface and an endpoint struct with `Interact`, `Build` and `Render`;
 - validation in `Interact`, returning `fmt.Errorf("%w: …", app.ErrBadInput)` or `app.NotFound(err, "widget", id)`;
-- `auth.KeyIDPtr(ctx)` for `created_by`.
+- `auth.KeyIDPtr(ctx)` for `created_by`;
+- on the list endpoint, a `Page` method naming the list (`app.PageRequest{List: "widget", Limit: req.Params.Limit, After: req.Params.After}`), an `Interact` that returns `app.Paginate` over `PageWidgets` with the row's sort key, and `Build` and `Render` over the page with `app.MapPage`. See "Lists" in [architecture.md](architecture.md).
 
 If a view model links to a page, add a method to `app.Links`.
 
@@ -100,7 +108,7 @@ func (s *Server) GetWidget(ctx context.Context, req apigen.GetWidgetRequestObjec
 }
 ```
 
-Check `req.Body == nil` in operations that take a body, and return the 400.
+Check `req.Body == nil` in operations that take a body, and return the 400. A list runs with `RunPaged` instead of `Run`, and maps `isUnprocessable(err)` to its 422.
 
 ## 7. MCP tools
 

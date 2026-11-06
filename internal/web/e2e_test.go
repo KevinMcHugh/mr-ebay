@@ -540,6 +540,20 @@ func TestMCPTools(t *testing.T) {
 	if len(runLog.Runs) != 1 {
 		t.Fatalf("list_runs %+v", runLog)
 	}
+	// A list tool hands back a page and the cursor for the next one.
+	call("run_search", map[string]any{"id": created.Search.ID}, &ran)
+	var page struct {
+		Runs []runs.Run
+		Next string
+	}
+	call("list_runs", map[string]any{"searchId": created.Search.ID, "limit": 1}, &page)
+	if len(page.Runs) != 1 || page.Runs[0].ID != ran.Run.ID || page.Next == "" {
+		t.Fatalf("list_runs, a page of 1: %+v", page)
+	}
+	call("list_runs", map[string]any{"searchId": created.Search.ID, "limit": 1, "after": page.Next}, &page)
+	if len(page.Runs) != 1 || page.Runs[0].ID != runLog.Runs[0].ID || page.Next != "" {
+		t.Fatalf("list_runs, the last page: %+v", page)
+	}
 
 	// Without a credential, MCP is a 401 pointing at OAuth discovery.
 	resp, err := http.Post(e.url+"/mcp/rpc", "application/json", strings.NewReader(`{}`))

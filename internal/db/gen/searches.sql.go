@@ -122,17 +122,25 @@ func (q *Queries) GetSearch(ctx context.Context, id string) (Search, error) {
 	return i, err
 }
 
-const listSearches = `-- name: ListSearches :many
+const pageSearches = `-- name: PageSearches :many
 SELECT searches.id, searches.name, searches.query, searches.category_ids, searches.conditions, searches.buying_options, searches.min_price_cents, searches.max_price_cents, searches.currency, searches.marketplace, searches.wants, searches.watch, searches.alert_below_cents, searches.last_run_at, searches.created_by, searches.created_at, searches.updated_at, searches.deleted_at,
        (SELECT COUNT(*) FROM matches m
          WHERE m.search_id = searches.id AND m.status = 'new'
            AND m.deleted_at IS NULL)::INT AS new_count
 FROM searches
 WHERE deleted_at IS NULL
-ORDER BY created_at DESC
+  AND ($1::CHAR(20) IS NULL OR (created_at, id) < ($2::TIMESTAMPTZ, $1::CHAR(20)))
+ORDER BY created_at DESC, id DESC
+LIMIT $3
 `
 
-type ListSearchesRow struct {
+type PageSearchesParams struct {
+	AfterID        *string            `json:"after_id"`
+	AfterCreatedAt pgtype.Timestamptz `json:"after_created_at"`
+	Lim            int32              `json:"lim"`
+}
+
+type PageSearchesRow struct {
 	ID              string             `json:"id"`
 	Name            string             `json:"name"`
 	Query           string             `json:"query"`
@@ -154,16 +162,18 @@ type ListSearchesRow struct {
 	NewCount        int32              `json:"new_count"`
 }
 
-// Newest first, with how many matches are still new.
-func (q *Queries) ListSearches(ctx context.Context) ([]ListSearchesRow, error) {
-	rows, err := q.db.Query(ctx, listSearches)
+// One page of the searches, newest first, with how many matches are still
+// new, after the (created_at, id) of the last search on the page before
+// (app.Paginate).
+func (q *Queries) PageSearches(ctx context.Context, arg PageSearchesParams) ([]PageSearchesRow, error) {
+	rows, err := q.db.Query(ctx, pageSearches, arg.AfterID, arg.AfterCreatedAt, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListSearchesRow{}
+	items := []PageSearchesRow{}
 	for rows.Next() {
-		var i ListSearchesRow
+		var i PageSearchesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,

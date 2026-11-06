@@ -174,7 +174,11 @@ func (s *Server) GetMe(ctx context.Context, req apigen.GetMeRequestObject) (apig
 // -----------------------------------------------------------------------------
 
 func (s *Server) ListSearches(ctx context.Context, req apigen.ListSearchesRequestObject) (apigen.ListSearchesResponseObject, error) {
-	return Run(ctx, searches.ListEndpoint{Store: s.store, Links: s.links}, req)
+	resp, err := RunPaged(ctx, searches.ListEndpoint{Store: s.store, Links: s.links}, req)
+	if isUnprocessable(err) {
+		return apigen.ListSearches422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
+	}
+	return resp, err
 }
 
 func (s *Server) GetSearch(ctx context.Context, req apigen.GetSearchRequestObject) (apigen.GetSearchResponseObject, error) {
@@ -245,7 +249,7 @@ func (s *Server) RunSearch(ctx context.Context, req apigen.RunSearchRequestObjec
 }
 
 func (s *Server) ListRuns(ctx context.Context, req apigen.ListRunsRequestObject) (apigen.ListRunsResponseObject, error) {
-	resp, err := Run(ctx, runs.ListEndpoint{Store: s.store}, req)
+	resp, err := RunPaged(ctx, runs.ListEndpoint{Store: s.store}, req)
 	if isUnprocessable(err) {
 		return apigen.ListRuns422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
 	}
@@ -257,7 +261,7 @@ func (s *Server) ListRuns(ctx context.Context, req apigen.ListRunsRequestObject)
 // -----------------------------------------------------------------------------
 
 func (s *Server) ListMatches(ctx context.Context, req apigen.ListMatchesRequestObject) (apigen.ListMatchesResponseObject, error) {
-	resp, err := Run(ctx, matches.ListEndpoint{Store: s.store, Links: s.links}, req)
+	resp, err := RunPaged(ctx, matches.ListEndpoint{Store: s.store, Links: s.links}, req)
 	switch {
 	case isNotFound(err):
 		return apigen.ListMatches404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil

@@ -17,10 +17,13 @@ RETURNING *;
 UPDATE searches SET last_run_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL;
 
--- Newest first, for one search or (search_id NULL) every live one.
--- name: ListRuns :many
+-- One page of runs, newest first, for one search or (search_id NULL) every
+-- live one, after the (started_at, id) of the last run on the page before
+-- (app.Paginate).
+-- name: PageRuns :many
 SELECT r.* FROM search_runs r
 JOIN searches s ON s.id = r.search_id AND s.deleted_at IS NULL
 WHERE (sqlc.narg(search_id)::CHAR(20) IS NULL OR r.search_id = sqlc.narg(search_id)::CHAR(20))
+  AND (sqlc.narg(after_id)::CHAR(20) IS NULL OR (r.started_at, r.id) < (sqlc.narg(after_started_at)::TIMESTAMPTZ, sqlc.narg(after_id)::CHAR(20)))
 ORDER BY r.started_at DESC, r.id DESC
-LIMIT @limit_count;
+LIMIT @lim;

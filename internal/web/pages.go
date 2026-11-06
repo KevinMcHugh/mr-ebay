@@ -186,14 +186,18 @@ func redirect(w http.ResponseWriter, r *http.Request, path, msg string, isErr bo
 // ---- searches ---------------------------------------------------------------
 
 func (s *Server) indexPage(w http.ResponseWriter, r *http.Request) {
-	list, err := server.BuildViewModel(r.Context(), searches.ListEndpoint{Store: s.Store, Links: s.Links}, apigen.ListSearchesRequestObject{})
+	// A page of searches; ?after= (from the Older searches link) is the next.
+	after := r.URL.Query().Get("after")
+	page, err := server.BuildViewModel(r.Context(), searches.ListEndpoint{Store: s.Store, Links: s.Links}, apigen.ListSearchesRequestObject{
+		Params: apigen.ListSearchesParams{After: after},
+	})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	s.render(w, r, http.StatusOK, "index", map[string]any{
-		"Searches": list,
-		"Form":     searches.Search{Currency: "USD", Marketplace: "EBAY_US"},
+		"Searches": page.Items, "Next": page.Next, "Later": after != "",
+		"Form": searches.Search{Currency: "USD", Marketplace: "EBAY_US"},
 	})
 }
 
@@ -223,8 +227,11 @@ func (s *Server) searchPage(w http.ResponseWriter, r *http.Request) {
 	if tab == "all" {
 		filter = ""
 	}
+	// A page of the tab's matches; ?after= (from the Older matches link) is
+	// the next.
+	after := r.URL.Query().Get("after")
 	ms, err := server.BuildViewModel(ctx, matches.ListEndpoint{Store: s.Store, Links: s.Links}, apigen.ListMatchesRequestObject{
-		SearchId: sr.ID, Params: apigen.ListMatchesParams{Status: apigen.MatchStatus(filter)},
+		SearchId: sr.ID, Params: apigen.ListMatchesParams{Status: apigen.MatchStatus(filter), After: after},
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -238,13 +245,14 @@ func (s *Server) searchPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var newIDs []string
-	for _, m := range ms {
+	for _, m := range ms.Items {
 		if m.Status == "new" {
 			newIDs = append(newIDs, m.ID)
 		}
 	}
 	s.render(w, r, http.StatusOK, "search", map[string]any{
-		"Search": sr, "Form": sr, "Matches": ms, "Tab": tab, "Tabs": matchTabs, "NewIDs": newIDs, "Runs": rs,
+		"Search": sr, "Form": sr, "Matches": ms.Items, "Next": ms.Next, "Later": after != "",
+		"Tab": tab, "Tabs": matchTabs, "NewIDs": newIDs, "Runs": rs.Items,
 	})
 }
 

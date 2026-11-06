@@ -41,18 +41,23 @@ type Querier interface {
 	ListAPIKeys(ctx context.Context) ([]ApiKey, error)
 	// Unused, unexpired, undeleted invites.
 	ListActiveInvites(ctx context.Context) ([]Invite, error)
-	// A search's matches with their listings, newest first. status NULL means
-	// every status.
-	ListMatches(ctx context.Context, arg ListMatchesParams) ([]ListMatchesRow, error)
 	// Every search that found a listing, with the search's name.
 	ListMatchesForListing(ctx context.Context, listingID string) ([]ListMatchesForListingRow, error)
 	// Newest first.
 	ListPricePoints(ctx context.Context, listingID string) ([]PricePoint, error)
-	// Newest first, for one search or (search_id NULL) every live one.
-	ListRuns(ctx context.Context, arg ListRunsParams) ([]SearchRun, error)
-	// Newest first, with how many matches are still new.
-	ListSearches(ctx context.Context) ([]ListSearchesRow, error)
 	MarkSearchRun(ctx context.Context, id string) error
+	// One page of a search's matches with their listings, newest first, after
+	// the (first_seen_at, id) of the last match on the page before
+	// (app.Paginate). status NULL means every status.
+	PageMatches(ctx context.Context, arg PageMatchesParams) ([]PageMatchesRow, error)
+	// One page of runs, newest first, for one search or (search_id NULL) every
+	// live one, after the (started_at, id) of the last run on the page before
+	// (app.Paginate).
+	PageRuns(ctx context.Context, arg PageRunsParams) ([]SearchRun, error)
+	// One page of the searches, newest first, with how many matches are still
+	// new, after the (created_at, id) of the last search on the page before
+	// (app.Paginate).
+	PageSearches(ctx context.Context, arg PageSearchesParams) ([]PageSearchesRow, error)
 	RevokeOAuthToken(ctx context.Context, id string) error
 	RevokeOAuthTokenByHash(ctx context.Context, tokenHash string) error
 	SetInviteKey(ctx context.Context, arg SetInviteKeyParams) error

@@ -19,8 +19,8 @@ Every surface ends in the same `Endpoint`. REST runs all three steps (`server.Ru
 | package | holds |
 | --- | --- |
 | `cmd/server` | `main`: `serve`, plus the `keys` and `invites` admin commands |
-| `internal/app` | `Store` (every sqlc query plus hand-written transactions), `Links` (absolute URLs for view models), `ErrNotFound`/`ErrBadInput`, `Name` |
-| `internal/server` | `Endpoint`, `Run`, `BuildViewModel`; `Server`, which implements the generated `StrictServerInterface`, maps errors to typed responses, and mounts the API with the spec-driven auth guard |
+| `internal/app` | `Store` (every sqlc query plus hand-written transactions), `Paginate` and `Page` (keyset pages of a list), `Links` (absolute URLs for view models), `ErrNotFound`/`ErrBadInput`, `Name` |
+| `internal/server` | `Endpoint`, `Run`, `BuildViewModel`, and the `Paged` extension; `Server`, which implements the generated `StrictServerInterface`, maps errors to typed responses, and mounts the API with the spec-driven auth guard |
 | `internal/server/<resource>` | one `Endpoint` per operation, each with its own narrow `Store` interface, plus the resource's view model and its API conversion |
 | `internal/appmcp` | MCP tools and the server's `Instructions` |
 | `internal/web` | the router, page handlers and templates, and the end-to-end tests |
@@ -42,6 +42,39 @@ type Endpoint[Req, M, VM, Res any] interface {
 - Each endpoint declares a `Store` interface with only the methods it calls (`searches.DeleteStore` is just `DeleteSearch`). This keeps an endpoint's reach obvious and makes a fake easy to write. `*app.Store` satisfies every one, because it embeds `*dbgen.Queries` and sqlc generates every method.
 - View models carry JSON tags, because MCP tools return them as is.
 - Errors: wrap `app.ErrNotFound`, `app.ErrBadInput` or `app.ErrUpstream` with a message (`app.NotFound` converts pgx's no-rows; `app.Upstream` wraps an eBay error). `server.go` turns them into the spec's 404, 422 and 502 bodies, the pages turn them into statuses or a redirect with `?err=`, and MCP returns them as tool errors.
+
+### Lists: `Paged`
+
+Every list operation (searches, matches, runs) returns a page: it takes `limit` (1 to 200, 100 if left out) and `after` (the `next` of the page before), and its body carries `next`, empty on the last page. Pages are keyset, not offset: a list's query orders by a key that is unique per row (its sort columns, ending in the id) and starts after the key of the last row the caller saw, so a page is as cheap at the end of a list as at the start, and a row added or deleted while someone pages neither repeats nor skips the rows around it. That matters for matches: a run adds many at once, all first seen in the same transaction, and the id breaks the tie between them.
+
+A list endpoint implements one more method beside the three, naming its list and reading the page off the request, and its model is that one page:
+
+```go
+type Paged[Req any] interface {
+	Page(req Req) app.PageRequest // the list's name, and the limit and after the caller sent
+}
+
+func (ListEndpoint) Page(req apigen.ListSearchesRequestObject) app.PageRequest {
+	return app.PageRequest{List: "search", Limit: req.Params.Limit, After: req.Params.After}
+}
+
+func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListSearchesRequestObject) (app.Page[Model], error) {
+	rows, err := app.Paginate(e.Page(req),
+		func(after *newest, limit int32) ([]dbgen.PageSearchesRow, error) { /* PageSearches, after the key */ },
+		func(r dbgen.PageSearchesRow) newest { return newest{r.CreatedAt.Time, r.ID} })
+	// map rows to the model with app.MapPage
+}
+```
+
+`app.Paginate` does the rest: it checks the limit, decodes the cursor (refusing one from another list, or one that is not a cursor, with `ErrBadInput`), asks the query for one row more than the page so it knows whether there is a next page without counting, and encodes the last row's key as `next`. `Build` and `Render` map the page with `app.MapPage`. The cursor is the key in base64 JSON with the list's name: opaque to callers, and a position, not a permission.
+
+Every surface pages: the API by `limit` and `after`, the `list_` MCP tools by the same arguments (the server's instructions tell Claude to follow `next`), and the pages by Older links that carry `after` (the index's searches, a search page's matches within its tab). Code that needs a whole list follows `next` with `server.All`, or keeps a `List…` query of every row beside the `Page…` one.
+
+Three things keep a list from going unpaged:
+
+- `server.go` runs every list through `RunPaged`, which takes a `PagedEndpoint` (a `Paged` endpoint whose model is an `app.Page`), so a list endpoint that returns a slice does not compile.
+- `Run` fails closed if a paged endpoint returned more than the caller asked for (`TestOverlongPageFailsClosed`).
+- `TestEveryListIsPaged` checks the spec: every `list…` operation takes `limit` and `after`, its body requires `next`, and it declares the 422.
 
 ## Conventions
 

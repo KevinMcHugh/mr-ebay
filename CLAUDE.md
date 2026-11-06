@@ -30,6 +30,8 @@ To change something in a generated file, edit its source (the spec, a query or a
 
 Endpoints return `app.ErrNotFound`, `app.ErrBadInput` or `app.ErrUpstream` (wrapped with `%w` and a message; `app.Upstream(err)` wraps an eBay client error). `internal/server/server.go` maps them to the spec's 404, 422 and 502, the pages map them to the same statuses, and MCP returns them as tool errors.
 
+Every list is paged: it takes `limit` (default 100, at most 200) and `after`, and returns `next`. The endpoint implements `Page(req) app.PageRequest` (`server.Paged`), returns `app.Paginate` over a keyset `Page…` query, and `server.go` runs it with `RunPaged`. MCP list tools take `limit` and `after`, and pages link to the next page with `?after=`. See "Lists" in @docs/architecture.md.
+
 ## eBay
 
 Only `internal/ebay` talks to eBay. Endpoints take it as a narrow `Searcher` interface field, the way they take a Store. Tests use the fake in `internal/ebay/ebaytest`; never call the real eBay from a test.
