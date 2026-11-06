@@ -167,7 +167,7 @@ func bodyRequired() apigen.BadRequestJSONResponse {
 // -----------------------------------------------------------------------------
 
 func (s *Server) GetMe(ctx context.Context, req apigen.GetMeRequestObject) (apigen.GetMeResponseObject, error) {
-	return Run(ctx, me.Endpoint{Store: s.store}, req)
+	return Run(ctx, me.Store(s.store), me.Endpoint{}, req)
 }
 
 // -----------------------------------------------------------------------------
@@ -175,7 +175,7 @@ func (s *Server) GetMe(ctx context.Context, req apigen.GetMeRequestObject) (apig
 // -----------------------------------------------------------------------------
 
 func (s *Server) ListSearches(ctx context.Context, req apigen.ListSearchesRequestObject) (apigen.ListSearchesResponseObject, error) {
-	resp, err := RunPaged(ctx, searches.ListEndpoint{Store: s.store, Links: s.links}, req)
+	resp, err := RunPaged(ctx, searches.ListStore(s.store), searches.ListEndpoint{Links: s.links}, req)
 	if isUnprocessable(err) {
 		return apigen.ListSearches422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
 	}
@@ -183,7 +183,7 @@ func (s *Server) ListSearches(ctx context.Context, req apigen.ListSearchesReques
 }
 
 func (s *Server) GetSearch(ctx context.Context, req apigen.GetSearchRequestObject) (apigen.GetSearchResponseObject, error) {
-	resp, err := Run(ctx, searches.GetEndpoint{Store: s.store, Links: s.links}, req)
+	resp, err := Run(ctx, searches.GetStore(s.store), searches.GetEndpoint{Links: s.links}, req)
 	if isNotFound(err) {
 		return apigen.GetSearch404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
 	}
@@ -194,7 +194,7 @@ func (s *Server) CreateSearch(ctx context.Context, req apigen.CreateSearchReques
 	if req.Body == nil {
 		return apigen.CreateSearch400JSONResponse{BadRequestJSONResponse: bodyRequired()}, nil
 	}
-	resp, err := Run(ctx, searches.CreateEndpoint{Store: s.store, Links: s.links}, req)
+	resp, err := Run(ctx, searches.CreateStore(s.store), searches.CreateEndpoint{Links: s.links}, req)
 	if isUnprocessable(err) {
 		return apigen.CreateSearch422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
 	}
@@ -205,7 +205,7 @@ func (s *Server) UpdateSearch(ctx context.Context, req apigen.UpdateSearchReques
 	if req.Body == nil {
 		return apigen.UpdateSearch400JSONResponse{BadRequestJSONResponse: bodyRequired()}, nil
 	}
-	resp, err := Run(ctx, searches.UpdateEndpoint{Store: s.store, Links: s.links}, req)
+	resp, err := Run(ctx, searches.UpdateStore(s.store), searches.UpdateEndpoint{Links: s.links}, req)
 	switch {
 	case isNotFound(err):
 		return apigen.UpdateSearch404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
@@ -216,7 +216,7 @@ func (s *Server) UpdateSearch(ctx context.Context, req apigen.UpdateSearchReques
 }
 
 func (s *Server) DeleteSearch(ctx context.Context, req apigen.DeleteSearchRequestObject) (apigen.DeleteSearchResponseObject, error) {
-	resp, err := Run(ctx, searches.DeleteEndpoint{Store: s.store}, req)
+	resp, err := Run(ctx, searches.DeleteStore(s.store), searches.DeleteEndpoint{}, req)
 	if isNotFound(err) {
 		return apigen.DeleteSearch404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
 	}
@@ -228,7 +228,7 @@ func (s *Server) DeleteSearch(ctx context.Context, req apigen.DeleteSearchReques
 // -----------------------------------------------------------------------------
 
 func (s *Server) SearchEbay(ctx context.Context, req apigen.SearchEbayRequestObject) (apigen.SearchEbayResponseObject, error) {
-	resp, err := Run(ctx, listings.SearchEndpoint{Ebay: s.ebay}, req)
+	resp, err := Run(ctx, listings.Searcher(s.ebay), listings.SearchEndpoint{}, req)
 	switch {
 	case isUnprocessable(err):
 		return apigen.SearchEbay422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
@@ -239,7 +239,7 @@ func (s *Server) SearchEbay(ctx context.Context, req apigen.SearchEbayRequestObj
 }
 
 func (s *Server) RunSearch(ctx context.Context, req apigen.RunSearchRequestObject) (apigen.RunSearchResponseObject, error) {
-	resp, err := Run(ctx, runs.RunEndpoint{Store: s.store, Ebay: s.ebay, Links: s.links}, req)
+	resp, err := Run(ctx, runs.Deps(s.store, s.ebay), runs.RunEndpoint{Links: s.links}, req)
 	switch {
 	case isNotFound(err):
 		return apigen.RunSearch404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
@@ -250,7 +250,7 @@ func (s *Server) RunSearch(ctx context.Context, req apigen.RunSearchRequestObjec
 }
 
 func (s *Server) ListRuns(ctx context.Context, req apigen.ListRunsRequestObject) (apigen.ListRunsResponseObject, error) {
-	resp, err := RunPaged(ctx, runs.ListEndpoint{Store: s.store}, req)
+	resp, err := RunPaged(ctx, runs.ListStore(s.store), runs.ListEndpoint{}, req)
 	if isUnprocessable(err) {
 		return apigen.ListRuns422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
 	}
@@ -262,7 +262,7 @@ func (s *Server) ListRuns(ctx context.Context, req apigen.ListRunsRequestObject)
 // -----------------------------------------------------------------------------
 
 func (s *Server) ListMatches(ctx context.Context, req apigen.ListMatchesRequestObject) (apigen.ListMatchesResponseObject, error) {
-	resp, err := RunPaged(ctx, matches.ListEndpoint{Store: s.store, Links: s.links}, req)
+	resp, err := RunPaged(ctx, matches.ListStore(s.store), matches.ListEndpoint{Links: s.links}, req)
 	switch {
 	case isNotFound(err):
 		return apigen.ListMatches404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
@@ -276,7 +276,7 @@ func (s *Server) SetMatchStatus(ctx context.Context, req apigen.SetMatchStatusRe
 	if req.Body == nil {
 		return apigen.SetMatchStatus400JSONResponse{BadRequestJSONResponse: bodyRequired()}, nil
 	}
-	resp, err := Run(ctx, matches.SetStatusEndpoint{Store: s.store}, req)
+	resp, err := Run(ctx, matches.SetStatusStore(s.store), matches.SetStatusEndpoint{}, req)
 	if isUnprocessable(err) {
 		return apigen.SetMatchStatus422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
 	}
@@ -284,7 +284,7 @@ func (s *Server) SetMatchStatus(ctx context.Context, req apigen.SetMatchStatusRe
 }
 
 func (s *Server) GetListing(ctx context.Context, req apigen.GetListingRequestObject) (apigen.GetListingResponseObject, error) {
-	resp, err := Run(ctx, listings.GetEndpoint{Store: s.store, Links: s.links}, req)
+	resp, err := Run(ctx, listings.GetStore(s.store), listings.GetEndpoint{Links: s.links}, req)
 	if isNotFound(err) {
 		return apigen.GetListing404JSONResponse{NotFoundJSONResponse: notFound(err)}, nil
 	}

@@ -92,12 +92,26 @@ type Searcher interface {
 	Search(ctx context.Context, q ebay.Query) (ebay.Result, error)
 }
 
+// RunDeps is what a run reads and writes through: the store, and eBay.
+// Both are I/O, so both are Interact's argument rather than the endpoint's
+// fields; Deps joins them.
+type RunDeps interface {
+	RunStore
+	Searcher
+}
+
+// Deps joins a store and an eBay client into a run's RunDeps.
+func Deps(store RunStore, eb Searcher) RunDeps { return deps{store, eb} }
+
+type deps struct {
+	RunStore
+	Searcher
+}
+
 // RunEndpoint runs a saved search against eBay and stores what it finds.
 // The run is logged whether or not it succeeds, so a failing watcher shows
 // up in list_runs with its error.
 type RunEndpoint struct {
-	Store RunStore
-	Ebay  Searcher
 	Links app.Links
 	// Trigger is Manual (the default) or Watch.
 	Trigger string
@@ -108,8 +122,8 @@ type runModel struct {
 	Recorded []app.Recorded
 }
 
-func (e RunEndpoint) Interact(ctx context.Context, req apigen.RunSearchRequestObject) (runModel, error) {
-	search, err := e.Store.GetSearch(ctx, req.SearchId)
+func (e RunEndpoint) Interact(ctx context.Context, deps RunDeps, req apigen.RunSearchRequestObject) (runModel, error) {
+	search, err := deps.GetSearch(ctx, req.SearchId)
 	if err != nil {
 		return runModel{}, app.NotFound(err, "search", req.SearchId)
 	}
@@ -117,7 +131,7 @@ func (e RunEndpoint) Interact(ctx context.Context, req apigen.RunSearchRequestOb
 	if trigger == "" {
 		trigger = Manual
 	}
-	run, err := e.Store.CreateRun(ctx, dbgen.CreateRunParams{ID: xid.New().String(), SearchID: search.ID, Trigger: trigger})
+	run, err := deps.CreateRun(ctx, dbgen.CreateRunParams{ID: xid.New().String(), SearchID: search.ID, Trigger: trigger})
 	if err != nil {
 		return runModel{}, err
 	}
@@ -126,19 +140,19 @@ func (e RunEndpoint) Interact(ctx context.Context, req apigen.RunSearchRequestOb
 	finish := func(arg dbgen.FinishRunParams) (dbgen.SearchRun, error) {
 		bg := context.WithoutCancel(ctx)
 		arg.ID = run.ID
-		done, err := e.Store.FinishRun(bg, arg)
+		done, err := deps.FinishRun(bg, arg)
 		if err != nil {
 			return done, err
 		}
-		return done, e.Store.MarkSearchRun(bg, search.ID)
+		return done, deps.MarkSearchRun(bg, search.ID)
 	}
 
-	res, err := e.Ebay.Search(ctx, searches.QueryOf(search))
+	res, err := deps.Search(ctx, searches.QueryOf(search))
 	if err != nil {
 		_, _ = finish(dbgen.FinishRunParams{Error: err.Error()})
 		return runModel{}, app.Upstream(err)
 	}
-	recs, err := e.Store.RecordResults(ctx, search.ID, res.Items)
+	recs, err := deps.RecordResults(ctx, search.ID, res.Items)
 	if err != nil {
 		_, _ = finish(dbgen.FinishRunParams{ResultCount: int32(len(res.Items)), Error: "storing results: " + err.Error()})
 		return runModel{}, fmt.Errorf("storing results: %w", err)
@@ -196,15 +210,15 @@ type ListStore interface {
 
 // ListEndpoint is a page of recent runs, newest first, for one search or
 // all.
-type ListEndpoint struct{ Store ListStore }
+type ListEndpoint struct{}
 
 // Page is the page the caller asked for.
 func (ListEndpoint) Page(req apigen.ListRunsRequestObject) app.PageRequest {
 	return app.PageRequest{List: "run", Limit: req.Params.Limit, After: req.Params.After}
 }
 
-func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListRunsRequestObject) (app.Page[dbgen.SearchRun], error) {
-	return e.Store.PageRuns(ctx, req.Params.SearchId, e.Page(req))
+func (e ListEndpoint) Interact(ctx context.Context, store ListStore, req apigen.ListRunsRequestObject) (app.Page[dbgen.SearchRun], error) {
+	return store.PageRuns(ctx, req.Params.SearchId, e.Page(req))
 }
 
 func (ListEndpoint) Build(p app.Page[dbgen.SearchRun]) app.Page[Run] {

@@ -118,7 +118,7 @@ func registerRead(s *mcpsdk.Server, store server.Store, links app.Links) {
 		Name:        "whoami",
 		Description: "The api key this connection acts as.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ Empty) (*mcpsdk.CallToolResult, MeOutput, error) {
-		vm, err := server.BuildViewModel(ctx, me.Endpoint{Store: store}, apigen.GetMeRequestObject{})
+		vm, err := server.BuildViewModel(ctx, me.Store(store), me.Endpoint{}, apigen.GetMeRequestObject{})
 		return nil, MeOutput{Me: vm}, err
 	})
 
@@ -126,7 +126,7 @@ func registerRead(s *mcpsdk.Server, store server.Store, links app.Links) {
 		Name:        "list_searches",
 		Description: "List the user's saved eBay searches, newest first, a page at a time, with how many matches they have not looked at yet.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListSearchesInput) (*mcpsdk.CallToolResult, ListSearchesOutput, error) {
-		vm, err := server.BuildViewModel(ctx, searches.ListEndpoint{Store: store, Links: links}, apigen.ListSearchesRequestObject{
+		vm, err := server.BuildViewModel(ctx, searches.ListStore(store), searches.ListEndpoint{Links: links}, apigen.ListSearchesRequestObject{
 			Params: apigen.ListSearchesParams{Limit: in.Limit, After: in.After},
 		})
 		return nil, ListSearchesOutput{Searches: vm.Items, Next: vm.Next}, err
@@ -136,7 +136,7 @@ func registerRead(s *mcpsdk.Server, store server.Store, links app.Links) {
 		Name:        "get_search",
 		Description: "One saved search in full, including the user's wants in their own words.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SearchIDInput) (*mcpsdk.CallToolResult, SearchOutput, error) {
-		vm, err := server.BuildViewModel(ctx, searches.GetEndpoint{Store: store, Links: links}, apigen.GetSearchRequestObject{SearchId: in.ID})
+		vm, err := server.BuildViewModel(ctx, searches.GetStore(store), searches.GetEndpoint{Links: links}, apigen.GetSearchRequestObject{SearchId: in.ID})
 		return nil, SearchOutput{Search: vm}, err
 	})
 }
@@ -146,7 +146,7 @@ func registerWrite(s *mcpsdk.Server, store server.Store, links app.Links) {
 		Name:        "create_search",
 		Description: "Save an eBay search. Put the hard filters in the filter fields and everything else the user said about what they want in wants. Saving does not run it.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateSearchInput) (*mcpsdk.CallToolResult, SearchOutput, error) {
-		vm, err := server.BuildViewModel(ctx, searches.CreateEndpoint{Store: store, Links: links}, apigen.CreateSearchRequestObject{
+		vm, err := server.BuildViewModel(ctx, searches.CreateStore(store), searches.CreateEndpoint{Links: links}, apigen.CreateSearchRequestObject{
 			Body: &apigen.SearchCreate{
 				Name: in.Name, Query: in.Query, CategoryIds: in.CategoryIDs, Conditions: in.Conditions,
 				BuyingOptions: in.BuyingOptions, MinPriceCents: in.MinPriceCents, MaxPriceCents: in.MaxPriceCents,
@@ -161,7 +161,7 @@ func registerWrite(s *mcpsdk.Server, store server.Store, links app.Links) {
 		Name:        "update_search",
 		Description: "Change a saved search. Fields left out stay as they are.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateSearchInput) (*mcpsdk.CallToolResult, SearchOutput, error) {
-		vm, err := server.BuildViewModel(ctx, searches.UpdateEndpoint{Store: store, Links: links}, apigen.UpdateSearchRequestObject{
+		vm, err := server.BuildViewModel(ctx, searches.UpdateStore(store), searches.UpdateEndpoint{Links: links}, apigen.UpdateSearchRequestObject{
 			SearchId: in.ID,
 			Body: &apigen.SearchUpdate{
 				Name: in.Name, Query: in.Query, CategoryIds: in.CategoryIDs, Conditions: in.Conditions,
@@ -177,7 +177,7 @@ func registerWrite(s *mcpsdk.Server, store server.Store, links app.Links) {
 		Name:        "delete_search",
 		Description: "Delete a saved search. Confirm with the user first.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SearchIDInput) (*mcpsdk.CallToolResult, OKOutput, error) {
-		ok, err := server.BuildViewModel(ctx, searches.DeleteEndpoint{Store: store}, apigen.DeleteSearchRequestObject{SearchId: in.ID})
+		ok, err := server.BuildViewModel(ctx, searches.DeleteStore(store), searches.DeleteEndpoint{}, apigen.DeleteSearchRequestObject{SearchId: in.ID})
 		return nil, OKOutput{OK: ok}, err
 	})
 }
@@ -250,7 +250,7 @@ func registerEbay(s *mcpsdk.Server, store server.Store, eb ebay.Searcher, links 
 		Name:        "search_ebay",
 		Description: "Search eBay now without saving anything. Use it to try keywords and filters before create_search. Each call uses eBay quota, so do not loop on it.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SearchEbayInput) (*mcpsdk.CallToolResult, SearchEbayOutput, error) {
-		vm, err := server.BuildViewModel(ctx, listings.SearchEndpoint{Ebay: eb}, apigen.SearchEbayRequestObject{
+		vm, err := server.BuildViewModel(ctx, listings.Searcher(eb), listings.SearchEndpoint{}, apigen.SearchEbayRequestObject{
 			Params: apigen.SearchEbayParams{
 				Q: in.Query, CategoryIds: in.CategoryIDs, Conditions: in.Conditions, BuyingOptions: in.BuyingOptions,
 				MinPriceCents: in.MinPriceCents, MaxPriceCents: in.MaxPriceCents, Currency: in.Currency,
@@ -264,7 +264,7 @@ func registerEbay(s *mcpsdk.Server, store server.Store, eb ebay.Searcher, links 
 		Name:        "run_search",
 		Description: "Run a saved search against eBay now and store what it finds. Returns the matches this search had not found before (newMatches) and listings whose total dropped (priceDrops). Matches it found before and that did not drop are stored but not returned; see list_matches.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SearchIDInput) (*mcpsdk.CallToolResult, RunOutput, error) {
-		vm, err := server.BuildViewModel(ctx, runs.RunEndpoint{Store: store, Ebay: eb, Links: links}, apigen.RunSearchRequestObject{SearchId: in.ID})
+		vm, err := server.BuildViewModel(ctx, runs.Deps(store, eb), runs.RunEndpoint{Links: links}, apigen.RunSearchRequestObject{SearchId: in.ID})
 		return nil, RunOutput{Result: vm}, err
 	})
 
@@ -272,7 +272,7 @@ func registerEbay(s *mcpsdk.Server, store server.Store, eb ebay.Searcher, links 
 		Name:        "list_matches",
 		Description: "What a saved search has found, newest first, a page at a time, each with its listing. Filter by status to see only new, seen, starred or dismissed ones.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMatchesInput) (*mcpsdk.CallToolResult, ListMatchesOutput, error) {
-		vm, err := server.BuildViewModel(ctx, matches.ListEndpoint{Store: store, Links: links}, apigen.ListMatchesRequestObject{
+		vm, err := server.BuildViewModel(ctx, matches.ListStore(store), matches.ListEndpoint{Links: links}, apigen.ListMatchesRequestObject{
 			SearchId: in.SearchID, Params: apigen.ListMatchesParams{Status: apigen.MatchStatus(in.Status), Limit: in.Limit, After: in.After},
 		})
 		return nil, ListMatchesOutput{Matches: vm.Items, Next: vm.Next}, err
@@ -282,7 +282,7 @@ func registerEbay(s *mcpsdk.Server, store server.Store, eb ebay.Searcher, links 
 		Name:        "set_match_status",
 		Description: "Mark matches seen (reported to the user), starred (the user likes it), dismissed (does not fit), or new again. Status is per search: dismissing here does not hide the listing from another search.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SetMatchStatusInput) (*mcpsdk.CallToolResult, SetMatchStatusOutput, error) {
-		n, err := server.BuildViewModel(ctx, matches.SetStatusEndpoint{Store: store}, apigen.SetMatchStatusRequestObject{
+		n, err := server.BuildViewModel(ctx, matches.SetStatusStore(store), matches.SetStatusEndpoint{}, apigen.SetMatchStatusRequestObject{
 			Body: &apigen.SetMatchStatusJSONRequestBody{Ids: in.IDs, Status: apigen.MatchStatus(in.Status)},
 		})
 		return nil, SetMatchStatusOutput{Updated: n}, err
@@ -292,7 +292,7 @@ func registerEbay(s *mcpsdk.Server, store server.Store, eb ebay.Searcher, links 
 		Name:        "get_listing",
 		Description: "One stored listing with its price history (asking prices over time, newest first) and every search that found it.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListingIDInput) (*mcpsdk.CallToolResult, ListingOutput, error) {
-		vm, err := server.BuildViewModel(ctx, listings.GetEndpoint{Store: store, Links: links}, apigen.GetListingRequestObject{ListingId: in.ID})
+		vm, err := server.BuildViewModel(ctx, listings.GetStore(store), listings.GetEndpoint{Links: links}, apigen.GetListingRequestObject{ListingId: in.ID})
 		return nil, ListingOutput{Listing: vm}, err
 	})
 
@@ -300,7 +300,7 @@ func registerEbay(s *mcpsdk.Server, store server.Store, eb ebay.Searcher, links 
 		Name:        "list_runs",
 		Description: "Recent runs, newest first, a page at a time, with how many results each found and any error. Use it to check that searches, and the watcher, are working.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListRunsInput) (*mcpsdk.CallToolResult, ListRunsOutput, error) {
-		vm, err := server.BuildViewModel(ctx, runs.ListEndpoint{Store: store}, apigen.ListRunsRequestObject{
+		vm, err := server.BuildViewModel(ctx, runs.ListStore(store), runs.ListEndpoint{}, apigen.ListRunsRequestObject{
 			Params: apigen.ListRunsParams{SearchId: in.SearchID, Limit: in.Limit, After: in.After},
 		})
 		return nil, ListRunsOutput{Runs: vm.Items, Next: vm.Next}, err

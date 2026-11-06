@@ -23,14 +23,14 @@ type Store interface {
 
 // Endpoint is the api key the request acts as. The route is private, so the
 // auth middleware has put a key on the context before this runs.
-type Endpoint struct{ Store Store }
+type Endpoint struct{}
 
-func (e Endpoint) Interact(ctx context.Context, _ apigen.GetMeRequestObject) (dbgen.ApiKey, error) {
+func (e Endpoint) Interact(ctx context.Context, store Store, _ apigen.GetMeRequestObject) (dbgen.ApiKey, error) {
 	id := auth.KeyID(ctx)
 	if id == "" {
 		return dbgen.ApiKey{}, errors.New("me: no api key on the context")
 	}
-	return e.Store.GetAPIKey(ctx, id)
+	return store.GetAPIKey(ctx, id)
 }
 
 func (Endpoint) Build(k dbgen.ApiKey) Me { return Me{KeyID: k.ID, Name: k.Name} }

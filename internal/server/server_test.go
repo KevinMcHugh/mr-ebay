@@ -106,10 +106,13 @@ func TestEveryListIsPaged(t *testing.T) {
 	}
 }
 
+// noStore is the store the fake endpoint below is handed; it uses none.
+type noStore struct{}
+
 // overlong is a Paged endpoint that ignores the limit it was asked for.
 type overlong struct{}
 
-func (overlong) Interact(context.Context, int) (app.Page[int], error) {
+func (overlong) Interact(context.Context, noStore, int) (app.Page[int], error) {
 	return app.Page[int]{Items: []int{1, 2, 3}}, nil
 }
 func (overlong) Build(p app.Page[int]) app.Page[int] { return p }
@@ -120,13 +123,13 @@ func (overlong) Page(limit int) app.PageRequest      { return app.PageRequest{Li
 // on every surface, rather than handing back a large list whole.
 func TestOverlongPageFailsClosed(t *testing.T) {
 	ctx := context.Background()
-	if _, err := server.RunPaged(ctx, overlong{}, 2); err == nil {
+	if _, err := server.RunPaged(ctx, noStore{}, overlong{}, 2); err == nil {
 		t.Fatal("Run passed a page of 3 for a limit of 2")
 	}
-	if _, err := server.BuildViewModel(ctx, overlong{}, 2); err == nil {
+	if _, err := server.BuildViewModel(ctx, noStore{}, overlong{}, 2); err == nil {
 		t.Fatal("BuildViewModel passed a page of 3 for a limit of 2")
 	}
-	if n, err := server.RunPaged(ctx, overlong{}, 3); err != nil || n != 3 {
+	if n, err := server.RunPaged(ctx, noStore{}, overlong{}, 3); err != nil || n != 3 {
 		t.Fatalf("a page within its limit: %d, %v", n, err)
 	}
 }
