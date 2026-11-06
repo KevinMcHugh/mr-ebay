@@ -30,6 +30,7 @@ const BaseURL = "/api"
 type Store interface {
 	dbgen.Querier
 	RecordResults(ctx context.Context, searchID string, items []ebay.Item) ([]app.Recorded, error)
+	app.Pager
 }
 
 // Server implements apigen.StrictServerInterface by composing per-resource

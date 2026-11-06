@@ -46,20 +46,20 @@ type Querier interface {
 	// Newest first.
 	ListPricePoints(ctx context.Context, listingID string) ([]PricePoint, error)
 	MarkSearchRun(ctx context.Context, id string) error
-	// One page of a search's matches with their listings, newest first, after
-	// the (first_seen_at, id) of the last match on the page before
-	// (app.Paginate). status NULL means every status.
-	PageMatches(ctx context.Context, arg PageMatchesParams) ([]PageMatchesRow, error)
-	// One page of runs, newest first, for one search or (search_id NULL) every
-	// live one, after the (started_at, id) of the last run on the page before
-	// (app.Paginate).
-	PageRuns(ctx context.Context, arg PageRunsParams) ([]SearchRun, error)
-	// One page of the searches, newest first, with how many matches are still
-	// new, after the (created_at, id) of the last search on the page before
-	// (app.Paginate).
-	PageSearches(ctx context.Context, arg PageSearchesParams) ([]PageSearchesRow, error)
+	// A search's matches with their listings, newest first, after the
+	// (first_seen_at, id) of the last match on the page before;
+	// app.Store.PageMatches pages them. status NULL means every status.
+	MatchesAfter(ctx context.Context, arg MatchesAfterParams) ([]MatchesAfterRow, error)
 	RevokeOAuthToken(ctx context.Context, id string) error
 	RevokeOAuthTokenByHash(ctx context.Context, tokenHash string) error
+	// Runs, newest first, for one search or (search_id NULL) every live one,
+	// after the (started_at, id) of the last run on the page before;
+	// app.Store.PageRuns pages them.
+	RunsAfter(ctx context.Context, arg RunsAfterParams) ([]SearchRun, error)
+	// The searches, newest first, with how many matches are still new, after
+	// the (created_at, id) of the last search on the page before;
+	// app.Store.PageSearches pages them.
+	SearchesAfter(ctx context.Context, arg SearchesAfterParams) ([]SearchesAfterRow, error)
 	SetInviteKey(ctx context.Context, arg SetInviteKeyParams) error
 	SetMatchStatus(ctx context.Context, arg SetMatchStatusParams) (int64, error)
 	TouchAPIKey(ctx context.Context, id string) error

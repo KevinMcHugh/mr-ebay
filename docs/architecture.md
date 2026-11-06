@@ -19,7 +19,7 @@ Every surface ends in the same `Endpoint`. REST runs all three steps (`server.Ru
 | package | holds |
 | --- | --- |
 | `cmd/server` | `main`: `serve`, plus the `keys` and `invites` admin commands |
-| `internal/app` | `Store` (every sqlc query plus hand-written transactions), `Paginate` and `Page` (keyset pages of a list), `Links` (absolute URLs for view models), `ErrNotFound`/`ErrBadInput`, `Name` |
+| `internal/app` | `Store` (every sqlc query plus hand-written transactions), the `Page…` lists (`Pager`) with `Paginate` and `Page` beneath them, `Links` (absolute URLs for view models), `ErrNotFound`/`ErrBadInput`, `Name` |
 | `internal/server` | `Endpoint`, `Run`, `BuildViewModel`, and the `Paged` extension; `Server`, which implements the generated `StrictServerInterface`, maps errors to typed responses, and mounts the API with the spec-driven auth guard |
 | `internal/server/<resource>` | one `Endpoint` per operation, each with its own narrow `Store` interface, plus the resource's view model and its API conversion |
 | `internal/appmcp` | MCP tools and the server's `Instructions` |
@@ -47,28 +47,29 @@ type Endpoint[Req, M, VM, Res any] interface {
 
 Every list operation (searches, matches, runs) returns a page: it takes `limit` (1 to 200, 100 if left out) and `after` (the `next` of the page before), and its body carries `next`, empty on the last page. Pages are keyset, not offset: a list's query orders by a key that is unique per row (its sort columns, ending in the id) and starts after the key of the last row the caller saw, so a page is as cheap at the end of a list as at the start, and a row added or deleted while someone pages neither repeats nor skips the rows around it. That matters for matches: a run adds many at once, all first seen in the same transaction, and the id breaks the tie between them.
 
-A list endpoint implements one more method beside the three, naming its list and reading the page off the request, and its model is that one page:
+A list endpoint implements one more method beside the three, naming its list and reading the page off the request. Its model is that one page, which it asks its store for, through its narrow `Store` interface like any other read:
 
 ```go
 type Paged[Req any] interface {
 	Page(req Req) app.PageRequest // the list's name, and the limit and after the caller sent
 }
 
-func (ListEndpoint) Page(req apigen.ListSearchesRequestObject) app.PageRequest {
-	return app.PageRequest{List: "search", Limit: req.Params.Limit, After: req.Params.After}
+type ListStore interface {
+	PageRuns(ctx context.Context, searchID string, p app.PageRequest) (app.Page[dbgen.SearchRun], error)
 }
 
-func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListSearchesRequestObject) (app.Page[Model], error) {
-	rows, err := app.Paginate(e.Page(req),
-		func(after *newest, limit int32) ([]dbgen.PageSearchesRow, error) { /* PageSearches, after the key */ },
-		func(r dbgen.PageSearchesRow) newest { return newest{r.CreatedAt.Time, r.ID} })
-	// map rows to the model with app.MapPage
+func (ListEndpoint) Page(req apigen.ListRunsRequestObject) app.PageRequest {
+	return app.PageRequest{List: "run", Limit: req.Params.Limit, After: req.Params.After}
+}
+
+func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListRunsRequestObject) (app.Page[dbgen.SearchRun], error) {
+	return e.Store.PageRuns(ctx, req.Params.SearchId, e.Page(req))
 }
 ```
 
-`app.Paginate` does the rest: it checks the limit, decodes the cursor (refusing one from another list, or one that is not a cursor, with `ErrBadInput`), asks the query for one row more than the page so it knows whether there is a next page without counting, and encodes the last row's key as `next`. `Build` and `Render` map the page with `app.MapPage`. The cursor is the key in base64 JSON with the list's name: opaque to callers, and a position, not a permission.
+The paging is the store's business, in `internal/app/pages.go`: each `Page…` method (`app.Pager` lists them) runs its keyset query (`RunsAfter`) with its sort key through `app.Paginate`, so an endpoint knows nothing of keys or cursors, and a fake store returns a page outright. `app.Paginate` checks the limit, decodes the cursor (refusing one from another list, or one that is not a cursor, with `ErrBadInput`), asks the query for one row more than the page so it knows whether there is a next page without counting, and encodes the last row's key as `next`. `Build` and `Render` map the page with `app.MapPage`. The cursor is the key in base64 JSON with the list's name: opaque to callers, and a position, not a permission.
 
-Every surface pages: the API by `limit` and `after`, the `list_` MCP tools by the same arguments (the server's instructions tell Claude to follow `next`), and the pages by Older links that carry `after` (the index's searches, a search page's matches within its tab). Code that needs a whole list follows `next` with `server.All`, or keeps a `List…` query of every row beside the `Page…` one.
+Every surface pages: the API by `limit` and `after`, the `list_` MCP tools by the same arguments (the server's instructions tell Claude to follow `next`), and the pages by Older links that carry `after` (the index's searches, a search page's matches within its tab). Code that needs a whole list follows `next` with `server.All`, or keeps a `List…` query of every row beside the `…After` one.
 
 Three things keep a list from going unpaged:
 

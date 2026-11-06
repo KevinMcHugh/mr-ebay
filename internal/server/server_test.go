@@ -27,8 +27,11 @@ func TestPublicOperations(t *testing.T) {
 	}
 }
 
-// nilStore panics on any call, through its nil Querier or here.
-type nilStore struct{ dbgen.Querier }
+// nilStore panics on any call, through its nil Querier or Pager or here.
+type nilStore struct {
+	dbgen.Querier
+	app.Pager
+}
 
 func (nilStore) RecordResults(context.Context, string, []ebay.Item) ([]app.Recorded, error) {
 	panic("reached the store")
