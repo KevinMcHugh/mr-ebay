@@ -38,7 +38,10 @@ paths:
   /searches:
     get:
       operationId: listSearches
-      summary: List saved searches, newest first
+      summary: List saved searches, newest first, a page at a time
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/After"
       responses:
         "200":
           description: The searches
@@ -48,6 +51,8 @@ paths:
                 $ref: "#/components/schemas/SearchList"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
     post:
       operationId: createSearch
       summary: Save a search
@@ -149,19 +154,15 @@ paths:
       - $ref: "#/components/parameters/SearchId"
     get:
       operationId: listMatches
-      summary: A search's matches, newest first
+      summary: A search's matches, newest first, a page at a time
       parameters:
         - name: status
           in: query
           description: Only matches with this status.
           schema:
             $ref: "#/components/schemas/MatchStatus"
-        - name: limit
-          in: query
-          description: At most this many, 1-500.
-          schema:
-            type: integer
-            default: 100
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/After"
       responses:
         "200":
           description: The matches
@@ -225,19 +226,15 @@ paths:
   /runs:
     get:
       operationId: listRuns
-      summary: Recent runs, newest first
+      summary: Recent runs, newest first, a page at a time
       parameters:
         - name: searchId
           in: query
           description: Only this search's runs.
           schema:
             type: string
-        - name: limit
-          in: query
-          description: At most this many, 1-200.
-          schema:
-            type: integer
-            default: 20
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/After"
       responses:
         "200":
           description: The runs
@@ -333,6 +330,18 @@ components:
       description: The web session set by /login.
 
   parameters:
+    Limit:
+      name: limit
+      in: query
+      description: How many to return, from 1 to 200; leave out for 100.
+      schema:
+        type: integer
+    After:
+      name: after
+      in: query
+      description: Where to start, the next cursor from the previous page; leave out for the first page.
+      schema:
+        type: string
     SearchId:
       name: searchId
       in: path
@@ -457,8 +466,11 @@ components:
 
     SearchList:
       type: object
-      required: [searches]
+      required: [searches, next]
       properties:
+        next:
+          type: string
+          description: The cursor for the next page, to send as after; empty on the last page.
         searches:
           type: array
           items:
@@ -653,8 +665,11 @@ components:
 
     MatchList:
       type: object
-      required: [matches]
+      required: [matches, next]
       properties:
+        next:
+          type: string
+          description: The cursor for the next page, to send as after; empty on the last page.
         matches:
           type: array
           items:
@@ -740,8 +755,11 @@ components:
 
     RunList:
       type: object
-      required: [runs]
+      required: [runs, next]
       properties:
+        next:
+          type: string
+          description: The cursor for the next page, to send as after; empty on the last page.
         runs:
           type: array
           items:

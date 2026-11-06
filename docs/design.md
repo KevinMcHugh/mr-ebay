@@ -71,10 +71,11 @@ If eBay fails, refuses (rate limit) or is not configured, the run is finished wi
 
 The rest:
 
-- `GET /api/searches/{id}/matches` (`list_matches`): newest first, optionally one status, up to 500.
+- `GET /api/searches/{id}/matches` (`list_matches`): newest first, optionally one status, a page at a time (100 by default, at most 200; see "Lists" in [architecture.md](architecture.md)). Matches first seen in the same run are ordered by id.
 - `POST /api/matches/status` (`set_match_status`): up to 500 match ids at once. Unknown ids are skipped, and the response counts what changed.
 - `GET /api/listings/{id}` (`get_listing`): the listing, its price history (newest first), and every search that found it with that search's status.
-- `GET /api/runs` (`list_runs`): newest first, for one search or all. Runs of a deleted search drop out.
+- `GET /api/runs` (`list_runs`): newest first, a page at a time, for one search or all. Runs of a deleted search drop out.
+- `GET /api/searches` (`list_searches`) pages the same way.
 
 **Tests:** `internal/web/run_e2e_test.go` drives all of this against Postgres and the fake eBay. It covers new matches, a run with no changes, a price drop, statuses surviving a re-run, a second search sharing a listing but not its status, an eBay failure logged as a run, an ad-hoc search that stores nothing, and the 502 when eBay is not configured.
 
@@ -113,7 +114,8 @@ Like everything else, the pages drive the same endpoints through `server.BuildVi
   - **Run now** posts to `/searches/{id}/run` and comes back to the new matches with "Found N listings: X new, Y price drops." If eBay fails, that is a message on the page rather than an error page, because the run is in the log either way.
   - **Status tabs:** new, starred, seen, dismissed, all. The page opens on new when there is anything new, and on all otherwise, so it always opens on what needs looking at.
   - **Match grid:** one card per match, with photo, title, total, price and shipping, condition, buying options, seller and feedback, end time, status, the date first found, and a link to eBay. Its Seen, Star, Dismiss and Mark new buttons are one small form each.
-  - **Mark these N seen:** a single form that clears the new tab in one click.
+  - **Mark these N seen:** a single form that marks the matches on the page seen in one click.
+  - **Older matches:** the grid shows a page of 100; a link carries `after` to the next page of the same tab, and another goes back to the newest. The index pages its searches the same way.
   - **Recent runs:** the last five runs, with errors in red.
 - **Listing page** (`/listings/{id}`): the photo and facts, an **Open on eBay** link, every search that found it (each with its status buttons), and the price history as a table.
 - **Status forms** post to `/matches/status` with the match ids, the status, and `back`, the page to return to. `back` goes through `safeNext`, so it can only point at this site. `redirect` keeps `back`'s own query (the tab) and replaces any old message.

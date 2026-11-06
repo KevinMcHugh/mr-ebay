@@ -12,18 +12,14 @@ import (
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	dbgen "github.com/KevinMcHugh/mr-ebay/internal/db/gen"
 	"github.com/KevinMcHugh/mr-ebay/internal/server/listings"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // Statuses a match can have. Every match starts new.
 var Statuses = []string{"new", "seen", "starred", "dismissed"}
 
-// Limits.
-const (
-	DefaultLimit = 100
-	MaxLimit     = 500
-	// MaxIDs bounds one status change.
-	MaxIDs = 500
-)
+// MaxIDs bounds one status change.
+const MaxIDs = 500
 
 // -----------------------------------------------------------------------------
 // View model
@@ -69,50 +65,55 @@ func checkStatus(s string) error {
 
 type ListStore interface {
 	GetSearch(ctx context.Context, id string) (dbgen.Search, error)
-	ListMatches(ctx context.Context, arg dbgen.ListMatchesParams) ([]dbgen.ListMatchesRow, error)
+	PageMatches(ctx context.Context, arg dbgen.PageMatchesParams) ([]dbgen.PageMatchesRow, error)
 }
 
-// ListEndpoint is a search's matches, newest first, optionally of one
-// status.
+// ListEndpoint is a page of a search's matches, newest first, optionally
+// of one status.
 type ListEndpoint struct {
 	Store ListStore
 	Links app.Links
 }
 
-func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListMatchesRequestObject) ([]dbgen.ListMatchesRow, error) {
-	arg := dbgen.ListMatchesParams{SearchID: req.SearchId, LimitCount: int32(DefaultLimit)}
+// Page is the page the caller asked for.
+func (ListEndpoint) Page(req apigen.ListMatchesRequestObject) app.PageRequest {
+	return app.PageRequest{List: "match", Limit: req.Params.Limit, After: req.Params.After}
+}
+
+// newest is where a page of a list sorted newest first starts.
+type newest struct {
+	At time.Time
+	ID string
+}
+
+func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListMatchesRequestObject) (app.Page[dbgen.PageMatchesRow], error) {
+	var status *string
 	if s := string(req.Params.Status); s != "" {
 		if err := checkStatus(s); err != nil {
-			return nil, err
+			return app.Page[dbgen.PageMatchesRow]{}, err
 		}
-		arg.Status = &s
-	}
-	if n := req.Params.Limit; n != 0 {
-		if n < 1 || n > MaxLimit {
-			return nil, fmt.Errorf("%w: limit must be 1-%d", app.ErrBadInput, MaxLimit)
-		}
-		arg.LimitCount = int32(n)
+		status = &s
 	}
 	if _, err := e.Store.GetSearch(ctx, req.SearchId); err != nil {
-		return nil, app.NotFound(err, "search", req.SearchId)
+		return app.Page[dbgen.PageMatchesRow]{}, app.NotFound(err, "search", req.SearchId)
 	}
-	return e.Store.ListMatches(ctx, arg)
+	return app.Paginate(e.Page(req),
+		func(after *newest, limit int32) ([]dbgen.PageMatchesRow, error) {
+			arg := dbgen.PageMatchesParams{SearchID: req.SearchId, Status: status, Lim: limit}
+			if after != nil {
+				arg.AfterFirstSeenAt, arg.AfterID = pgtype.Timestamptz{Time: after.At, Valid: true}, &after.ID
+			}
+			return e.Store.PageMatches(ctx, arg)
+		},
+		func(r dbgen.PageMatchesRow) newest { return newest{r.Match.FirstSeenAt.Time, r.Match.ID} })
 }
 
-func (e ListEndpoint) Build(rows []dbgen.ListMatchesRow) []Match {
-	out := make([]Match, len(rows))
-	for i, r := range rows {
-		out[i] = ToViewModel(r.Match, r.Listing, e.Links)
-	}
-	return out
+func (e ListEndpoint) Build(p app.Page[dbgen.PageMatchesRow]) app.Page[Match] {
+	return app.MapPage(p, func(r dbgen.PageMatchesRow) Match { return ToViewModel(r.Match, r.Listing, e.Links) })
 }
 
-func (ListEndpoint) Render(vms []Match) apigen.ListMatchesResponseObject {
-	out := make([]apigen.Match, len(vms))
-	for i, m := range vms {
-		out[i] = ToAPI(m)
-	}
-	return apigen.ListMatches200JSONResponse{Matches: out}
+func (ListEndpoint) Render(p app.Page[Match]) apigen.ListMatchesResponseObject {
+	return apigen.ListMatches200JSONResponse{Matches: app.MapPage(p, ToAPI).Items, Next: p.Next}
 }
 
 // -----------------------------------------------------------------------------

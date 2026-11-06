@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/xid"
 
 	apigen "github.com/KevinMcHugh/mr-ebay/internal/api/gen"
@@ -22,12 +23,6 @@ import (
 const (
 	Manual = "manual"
 	Watch  = "watch"
-)
-
-// Limits on listing runs.
-const (
-	DefaultLimit = 20
-	MaxLimit     = 200
 )
 
 // -----------------------------------------------------------------------------
@@ -197,38 +192,44 @@ func (RunEndpoint) Render(vm Result) apigen.RunSearchResponseObject {
 // -----------------------------------------------------------------------------
 
 type ListStore interface {
-	ListRuns(ctx context.Context, arg dbgen.ListRunsParams) ([]dbgen.SearchRun, error)
+	PageRuns(ctx context.Context, arg dbgen.PageRunsParams) ([]dbgen.SearchRun, error)
 }
 
-// ListEndpoint is recent runs, newest first, for one search or all.
+// ListEndpoint is a page of recent runs, newest first, for one search or
+// all.
 type ListEndpoint struct{ Store ListStore }
 
-func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListRunsRequestObject) ([]dbgen.SearchRun, error) {
-	arg := dbgen.ListRunsParams{LimitCount: DefaultLimit}
-	if n := req.Params.Limit; n != 0 {
-		if n < 1 || n > MaxLimit {
-			return nil, fmt.Errorf("%w: limit must be 1-%d", app.ErrBadInput, MaxLimit)
-		}
-		arg.LimitCount = int32(n)
-	}
+// Page is the page the caller asked for.
+func (ListEndpoint) Page(req apigen.ListRunsRequestObject) app.PageRequest {
+	return app.PageRequest{List: "run", Limit: req.Params.Limit, After: req.Params.After}
+}
+
+// newest is where a page of a list sorted newest first starts.
+type newest struct {
+	At time.Time
+	ID string
+}
+
+func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListRunsRequestObject) (app.Page[dbgen.SearchRun], error) {
+	var search *string
 	if id := req.Params.SearchId; id != "" {
-		arg.SearchID = &id
+		search = &id
 	}
-	return e.Store.ListRuns(ctx, arg)
+	return app.Paginate(e.Page(req),
+		func(after *newest, limit int32) ([]dbgen.SearchRun, error) {
+			arg := dbgen.PageRunsParams{SearchID: search, Lim: limit}
+			if after != nil {
+				arg.AfterStartedAt, arg.AfterID = pgtype.Timestamptz{Time: after.At, Valid: true}, &after.ID
+			}
+			return e.Store.PageRuns(ctx, arg)
+		},
+		func(r dbgen.SearchRun) newest { return newest{r.StartedAt.Time, r.ID} })
 }
 
-func (ListEndpoint) Build(rows []dbgen.SearchRun) []Run {
-	out := make([]Run, len(rows))
-	for i, r := range rows {
-		out[i] = ToViewModel(r)
-	}
-	return out
+func (ListEndpoint) Build(p app.Page[dbgen.SearchRun]) app.Page[Run] {
+	return app.MapPage(p, ToViewModel)
 }
 
-func (ListEndpoint) Render(vms []Run) apigen.ListRunsResponseObject {
-	out := make([]apigen.Run, len(vms))
-	for i, r := range vms {
-		out[i] = ToAPI(r)
-	}
-	return apigen.ListRuns200JSONResponse{Runs: out}
+func (ListEndpoint) Render(p app.Page[Run]) apigen.ListRunsResponseObject {
+	return apigen.ListRuns200JSONResponse{Runs: app.MapPage(p, ToAPI).Items, Next: p.Next}
 }

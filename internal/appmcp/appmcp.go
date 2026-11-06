@@ -33,7 +33,7 @@ Finding things:
 1. search_ebay tries a query without saving anything. Use it to tune keywords and filters with the user.
 2. create_search saves it. Put hard filters in the filter fields and everything else the user said in wants.
 3. run_search fetches from eBay and returns the matches this search had not found before, plus price drops. Judge each one against the search's wants and tell the user about the ones that fit, with their links. Mark what you reported seen with set_match_status, and dismissed what clearly does not fit, so the next run only surfaces what is new.
-list_matches shows what a search has found (filter by status: new, seen, starred, dismissed), and get_listing gives one listing's price history and every search that found it. list_runs says whether runs are working, with their errors.
+list_matches shows what a search has found (filter by status: new, seen, starred, dismissed), and get_listing gives one listing's price history and every search that found it. list_runs says whether runs are working, with their errors. The list_ tools return a page at a time (100 unless you ask for up to 200) and a next cursor: to see more, call again with after set to next, until next is empty.
 
 list_searches and get_search show what the user is after; update_search and delete_search change them (confirm before deleting). Prices are integer cents of the search's currency (USD unless set), and 0 means no limit. Set watch only when the user wants to hear about new matches without asking.`
 
@@ -55,8 +55,17 @@ type MeOutput struct {
 	Me me.Me `json:"me"`
 }
 
+// ListSearchesInput is a page of the searches. Every list tool returns a
+// page and a next cursor: call it again with that as after for the next
+// page, until next is empty.
+type ListSearchesInput struct {
+	Limit int    `json:"limit,omitempty" jsonschema:"how many to return, from 1 to 200; omit for 100"`
+	After string `json:"after,omitempty" jsonschema:"the next value from the page before; omit for the first page"`
+}
+
 type ListSearchesOutput struct {
 	Searches []searches.Search `json:"searches"`
+	Next     string            `json:"next" jsonschema:"send as after for the next page; empty on the last page"`
 }
 
 type SearchIDInput struct {
@@ -115,10 +124,12 @@ func registerRead(s *mcpsdk.Server, store server.Store, links app.Links) {
 
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "list_searches",
-		Description: "List the user's saved eBay searches, newest first, with how many matches they have not looked at yet.",
-	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ Empty) (*mcpsdk.CallToolResult, ListSearchesOutput, error) {
-		vm, err := server.BuildViewModel(ctx, searches.ListEndpoint{Store: store, Links: links}, apigen.ListSearchesRequestObject{})
-		return nil, ListSearchesOutput{Searches: vm}, err
+		Description: "List the user's saved eBay searches, newest first, a page at a time, with how many matches they have not looked at yet.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListSearchesInput) (*mcpsdk.CallToolResult, ListSearchesOutput, error) {
+		vm, err := server.BuildViewModel(ctx, searches.ListEndpoint{Store: store, Links: links}, apigen.ListSearchesRequestObject{
+			Params: apigen.ListSearchesParams{Limit: in.Limit, After: in.After},
+		})
+		return nil, ListSearchesOutput{Searches: vm.Items, Next: vm.Next}, err
 	})
 
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
@@ -197,11 +208,13 @@ type RunOutput struct {
 type ListMatchesInput struct {
 	SearchID string `json:"searchId" jsonschema:"search id"`
 	Status   string `json:"status,omitempty" jsonschema:"only this status: new, seen, starred or dismissed; omit for all"`
-	Limit    int    `json:"limit,omitempty" jsonschema:"at most this many, 1-500 (default 100)"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"how many to return, from 1 to 200; omit for 100"`
+	After    string `json:"after,omitempty" jsonschema:"the next value from the page before; omit for the first page"`
 }
 
 type ListMatchesOutput struct {
 	Matches []matches.Match `json:"matches"`
+	Next    string          `json:"next" jsonschema:"send as after for the next page; empty on the last page"`
 }
 
 type SetMatchStatusInput struct {
@@ -223,11 +236,13 @@ type ListingOutput struct {
 
 type ListRunsInput struct {
 	SearchID string `json:"searchId,omitempty" jsonschema:"only this search's runs; omit for all"`
-	Limit    int    `json:"limit,omitempty" jsonschema:"at most this many, 1-200 (default 20)"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"how many to return, from 1 to 200; omit for 100"`
+	After    string `json:"after,omitempty" jsonschema:"the next value from the page before; omit for the first page"`
 }
 
 type ListRunsOutput struct {
 	Runs []runs.Run `json:"runs"`
+	Next string     `json:"next" jsonschema:"send as after for the next page; empty on the last page"`
 }
 
 func registerEbay(s *mcpsdk.Server, store server.Store, eb ebay.Searcher, links app.Links) {
@@ -255,12 +270,12 @@ func registerEbay(s *mcpsdk.Server, store server.Store, eb ebay.Searcher, links 
 
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "list_matches",
-		Description: "What a saved search has found, newest first, each with its listing. Filter by status to see only new, seen, starred or dismissed ones.",
+		Description: "What a saved search has found, newest first, a page at a time, each with its listing. Filter by status to see only new, seen, starred or dismissed ones.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMatchesInput) (*mcpsdk.CallToolResult, ListMatchesOutput, error) {
 		vm, err := server.BuildViewModel(ctx, matches.ListEndpoint{Store: store, Links: links}, apigen.ListMatchesRequestObject{
-			SearchId: in.SearchID, Params: apigen.ListMatchesParams{Status: apigen.MatchStatus(in.Status), Limit: in.Limit},
+			SearchId: in.SearchID, Params: apigen.ListMatchesParams{Status: apigen.MatchStatus(in.Status), Limit: in.Limit, After: in.After},
 		})
-		return nil, ListMatchesOutput{Matches: vm}, err
+		return nil, ListMatchesOutput{Matches: vm.Items, Next: vm.Next}, err
 	})
 
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
@@ -283,11 +298,11 @@ func registerEbay(s *mcpsdk.Server, store server.Store, eb ebay.Searcher, links 
 
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "list_runs",
-		Description: "Recent runs, newest first, with how many results each found and any error. Use it to check that searches, and the watcher, are working.",
+		Description: "Recent runs, newest first, a page at a time, with how many results each found and any error. Use it to check that searches, and the watcher, are working.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListRunsInput) (*mcpsdk.CallToolResult, ListRunsOutput, error) {
 		vm, err := server.BuildViewModel(ctx, runs.ListEndpoint{Store: store}, apigen.ListRunsRequestObject{
-			Params: apigen.ListRunsParams{SearchId: in.SearchID, Limit: in.Limit},
+			Params: apigen.ListRunsParams{SearchId: in.SearchID, Limit: in.Limit, After: in.After},
 		})
-		return nil, ListRunsOutput{Runs: vm}, err
+		return nil, ListRunsOutput{Runs: vm.Items, Next: vm.Next}, err
 	})
 }

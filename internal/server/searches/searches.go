@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/xid"
 
 	apigen "github.com/KevinMcHugh/mr-ebay/internal/api/gen"
@@ -228,47 +229,53 @@ func cleanSet(what string, vs, allowed []string, re *regexp.Regexp) ([]string, e
 // -----------------------------------------------------------------------------
 
 type ListStore interface {
-	ListSearches(ctx context.Context) ([]dbgen.ListSearchesRow, error)
+	PageSearches(ctx context.Context, arg dbgen.PageSearchesParams) ([]dbgen.PageSearchesRow, error)
 }
 
-// ListEndpoint is every saved search, newest first.
+// ListEndpoint is a page of the saved searches, newest first.
 type ListEndpoint struct {
 	Store ListStore
 	Links app.Links
 }
 
-func (e ListEndpoint) Interact(ctx context.Context, _ apigen.ListSearchesRequestObject) ([]Model, error) {
-	rows, err := e.Store.ListSearches(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Model, len(rows))
-	for i, r := range rows {
-		out[i] = Model{Row: dbgen.Search{
+// Page is the page the caller asked for.
+func (ListEndpoint) Page(req apigen.ListSearchesRequestObject) app.PageRequest {
+	return app.PageRequest{List: "search", Limit: req.Params.Limit, After: req.Params.After}
+}
+
+// newest is where a page of a list sorted newest first starts.
+type newest struct {
+	At time.Time
+	ID string
+}
+
+func (e ListEndpoint) Interact(ctx context.Context, req apigen.ListSearchesRequestObject) (app.Page[Model], error) {
+	rows, err := app.Paginate(e.Page(req),
+		func(after *newest, limit int32) ([]dbgen.PageSearchesRow, error) {
+			arg := dbgen.PageSearchesParams{Lim: limit}
+			if after != nil {
+				arg.AfterCreatedAt, arg.AfterID = pgtype.Timestamptz{Time: after.At, Valid: true}, &after.ID
+			}
+			return e.Store.PageSearches(ctx, arg)
+		},
+		func(r dbgen.PageSearchesRow) newest { return newest{r.CreatedAt.Time, r.ID} })
+	return app.MapPage(rows, func(r dbgen.PageSearchesRow) Model {
+		return Model{Row: dbgen.Search{
 			ID: r.ID, Name: r.Name, Query: r.Query, CategoryIds: r.CategoryIds, Conditions: r.Conditions,
 			BuyingOptions: r.BuyingOptions, MinPriceCents: r.MinPriceCents, MaxPriceCents: r.MaxPriceCents,
 			Currency: r.Currency, Marketplace: r.Marketplace, Wants: r.Wants, Watch: r.Watch,
 			AlertBelowCents: r.AlertBelowCents, LastRunAt: r.LastRunAt, CreatedBy: r.CreatedBy,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}, NewCount: int(r.NewCount)}
-	}
-	return out, nil
+	}), err
 }
 
-func (e ListEndpoint) Build(ms []Model) []Search {
-	out := make([]Search, len(ms))
-	for i, m := range ms {
-		out[i] = ToViewModel(m, e.Links)
-	}
-	return out
+func (e ListEndpoint) Build(p app.Page[Model]) app.Page[Search] {
+	return app.MapPage(p, func(m Model) Search { return ToViewModel(m, e.Links) })
 }
 
-func (e ListEndpoint) Render(vms []Search) apigen.ListSearchesResponseObject {
-	out := make([]apigen.Search, len(vms))
-	for i, s := range vms {
-		out[i] = toAPI(s)
-	}
-	return apigen.ListSearches200JSONResponse{Searches: out}
+func (e ListEndpoint) Render(p app.Page[Search]) apigen.ListSearchesResponseObject {
+	return apigen.ListSearches200JSONResponse{Searches: app.MapPage(p, toAPI).Items, Next: p.Next}
 }
 
 // -----------------------------------------------------------------------------

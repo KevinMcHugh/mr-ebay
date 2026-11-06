@@ -7,6 +7,8 @@ package dbgen
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const countNewMatches = `-- name: CountNewMatches :one
@@ -54,81 +56,6 @@ func (q *Queries) InsertMatch(ctx context.Context, arg InsertMatchParams) (Match
 	return i, err
 }
 
-const listMatches = `-- name: ListMatches :many
-SELECT m.id, m.search_id, m.listing_id, m.status, m.first_seen_at, m.last_seen_at, m.alerted_at, m.created_at, m.updated_at, m.deleted_at, l.id, l.ebay_item_id, l.marketplace, l.title, l.url, l.image_url, l.seller, l.seller_feedback_pct, l.condition, l.buying_options, l.price_cents, l.shipping_cents, l.currency, l.ends_at, l.first_seen_at, l.last_seen_at, l.data, l.created_at, l.updated_at, l.deleted_at
-FROM matches m
-JOIN listings l ON l.id = m.listing_id AND l.deleted_at IS NULL
-WHERE m.search_id = $1
-  AND m.deleted_at IS NULL
-  AND ($2::TEXT IS NULL OR m.status = $2::TEXT)
-ORDER BY m.first_seen_at DESC, m.id DESC
-LIMIT $3
-`
-
-type ListMatchesParams struct {
-	SearchID   string  `json:"search_id"`
-	Status     *string `json:"status"`
-	LimitCount int32   `json:"limit_count"`
-}
-
-type ListMatchesRow struct {
-	Match   Match   `json:"match"`
-	Listing Listing `json:"listing"`
-}
-
-// A search's matches with their listings, newest first. status NULL means
-// every status.
-func (q *Queries) ListMatches(ctx context.Context, arg ListMatchesParams) ([]ListMatchesRow, error) {
-	rows, err := q.db.Query(ctx, listMatches, arg.SearchID, arg.Status, arg.LimitCount)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListMatchesRow{}
-	for rows.Next() {
-		var i ListMatchesRow
-		if err := rows.Scan(
-			&i.Match.ID,
-			&i.Match.SearchID,
-			&i.Match.ListingID,
-			&i.Match.Status,
-			&i.Match.FirstSeenAt,
-			&i.Match.LastSeenAt,
-			&i.Match.AlertedAt,
-			&i.Match.CreatedAt,
-			&i.Match.UpdatedAt,
-			&i.Match.DeletedAt,
-			&i.Listing.ID,
-			&i.Listing.EbayItemID,
-			&i.Listing.Marketplace,
-			&i.Listing.Title,
-			&i.Listing.Url,
-			&i.Listing.ImageUrl,
-			&i.Listing.Seller,
-			&i.Listing.SellerFeedbackPct,
-			&i.Listing.Condition,
-			&i.Listing.BuyingOptions,
-			&i.Listing.PriceCents,
-			&i.Listing.ShippingCents,
-			&i.Listing.Currency,
-			&i.Listing.EndsAt,
-			&i.Listing.FirstSeenAt,
-			&i.Listing.LastSeenAt,
-			&i.Listing.Data,
-			&i.Listing.CreatedAt,
-			&i.Listing.UpdatedAt,
-			&i.Listing.DeletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listMatchesForListing = `-- name: ListMatchesForListing :many
 SELECT m.id, m.search_id, m.listing_id, m.status, m.first_seen_at, m.last_seen_at, m.alerted_at, m.created_at, m.updated_at, m.deleted_at, s.name AS search_name
 FROM matches m
@@ -164,6 +91,91 @@ func (q *Queries) ListMatchesForListing(ctx context.Context, listingID string) (
 			&i.Match.UpdatedAt,
 			&i.Match.DeletedAt,
 			&i.SearchName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageMatches = `-- name: PageMatches :many
+SELECT m.id, m.search_id, m.listing_id, m.status, m.first_seen_at, m.last_seen_at, m.alerted_at, m.created_at, m.updated_at, m.deleted_at, l.id, l.ebay_item_id, l.marketplace, l.title, l.url, l.image_url, l.seller, l.seller_feedback_pct, l.condition, l.buying_options, l.price_cents, l.shipping_cents, l.currency, l.ends_at, l.first_seen_at, l.last_seen_at, l.data, l.created_at, l.updated_at, l.deleted_at
+FROM matches m
+JOIN listings l ON l.id = m.listing_id AND l.deleted_at IS NULL
+WHERE m.search_id = $1
+  AND m.deleted_at IS NULL
+  AND ($2::TEXT IS NULL OR m.status = $2::TEXT)
+  AND ($3::CHAR(20) IS NULL OR (m.first_seen_at, m.id) < ($4::TIMESTAMPTZ, $3::CHAR(20)))
+ORDER BY m.first_seen_at DESC, m.id DESC
+LIMIT $5
+`
+
+type PageMatchesParams struct {
+	SearchID         string             `json:"search_id"`
+	Status           *string            `json:"status"`
+	AfterID          *string            `json:"after_id"`
+	AfterFirstSeenAt pgtype.Timestamptz `json:"after_first_seen_at"`
+	Lim              int32              `json:"lim"`
+}
+
+type PageMatchesRow struct {
+	Match   Match   `json:"match"`
+	Listing Listing `json:"listing"`
+}
+
+// One page of a search's matches with their listings, newest first, after
+// the (first_seen_at, id) of the last match on the page before
+// (app.Paginate). status NULL means every status.
+func (q *Queries) PageMatches(ctx context.Context, arg PageMatchesParams) ([]PageMatchesRow, error) {
+	rows, err := q.db.Query(ctx, pageMatches,
+		arg.SearchID,
+		arg.Status,
+		arg.AfterID,
+		arg.AfterFirstSeenAt,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PageMatchesRow{}
+	for rows.Next() {
+		var i PageMatchesRow
+		if err := rows.Scan(
+			&i.Match.ID,
+			&i.Match.SearchID,
+			&i.Match.ListingID,
+			&i.Match.Status,
+			&i.Match.FirstSeenAt,
+			&i.Match.LastSeenAt,
+			&i.Match.AlertedAt,
+			&i.Match.CreatedAt,
+			&i.Match.UpdatedAt,
+			&i.Match.DeletedAt,
+			&i.Listing.ID,
+			&i.Listing.EbayItemID,
+			&i.Listing.Marketplace,
+			&i.Listing.Title,
+			&i.Listing.Url,
+			&i.Listing.ImageUrl,
+			&i.Listing.Seller,
+			&i.Listing.SellerFeedbackPct,
+			&i.Listing.Condition,
+			&i.Listing.BuyingOptions,
+			&i.Listing.PriceCents,
+			&i.Listing.ShippingCents,
+			&i.Listing.Currency,
+			&i.Listing.EndsAt,
+			&i.Listing.FirstSeenAt,
+			&i.Listing.LastSeenAt,
+			&i.Listing.Data,
+			&i.Listing.CreatedAt,
+			&i.Listing.UpdatedAt,
+			&i.Listing.DeletedAt,
 		); err != nil {
 			return nil, err
 		}

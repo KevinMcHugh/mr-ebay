@@ -10,15 +10,19 @@ RETURNING *;
 SELECT * FROM searches
 WHERE id = $1 AND deleted_at IS NULL;
 
--- Newest first, with how many matches are still new.
--- name: ListSearches :many
+-- One page of the searches, newest first, with how many matches are still
+-- new, after the (created_at, id) of the last search on the page before
+-- (app.Paginate).
+-- name: PageSearches :many
 SELECT searches.*,
        (SELECT COUNT(*) FROM matches m
          WHERE m.search_id = searches.id AND m.status = 'new'
            AND m.deleted_at IS NULL)::INT AS new_count
 FROM searches
 WHERE deleted_at IS NULL
-ORDER BY created_at DESC;
+  AND (sqlc.narg(after_id)::CHAR(20) IS NULL OR (created_at, id) < (sqlc.narg(after_created_at)::TIMESTAMPTZ, sqlc.narg(after_id)::CHAR(20)))
+ORDER BY created_at DESC, id DESC
+LIMIT @lim;
 
 -- Replaces every editable field. The endpoint merges a partial update onto
 -- the current row first, because a NULL here has to be able to mean "no

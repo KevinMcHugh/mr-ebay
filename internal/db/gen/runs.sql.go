@@ -7,6 +7,8 @@ package dbgen
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createRun = `-- name: CreateRun :one
@@ -80,22 +82,42 @@ func (q *Queries) FinishRun(ctx context.Context, arg FinishRunParams) (SearchRun
 	return i, err
 }
 
-const listRuns = `-- name: ListRuns :many
+const markSearchRun = `-- name: MarkSearchRun :exec
+UPDATE searches SET last_run_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) MarkSearchRun(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, markSearchRun, id)
+	return err
+}
+
+const pageRuns = `-- name: PageRuns :many
 SELECT r.id, r.search_id, r.trigger, r.started_at, r.finished_at, r.result_count, r.new_count, r.price_drop_count, r.error FROM search_runs r
 JOIN searches s ON s.id = r.search_id AND s.deleted_at IS NULL
 WHERE ($1::CHAR(20) IS NULL OR r.search_id = $1::CHAR(20))
+  AND ($2::CHAR(20) IS NULL OR (r.started_at, r.id) < ($3::TIMESTAMPTZ, $2::CHAR(20)))
 ORDER BY r.started_at DESC, r.id DESC
-LIMIT $2
+LIMIT $4
 `
 
-type ListRunsParams struct {
-	SearchID   *string `json:"search_id"`
-	LimitCount int32   `json:"limit_count"`
+type PageRunsParams struct {
+	SearchID       *string            `json:"search_id"`
+	AfterID        *string            `json:"after_id"`
+	AfterStartedAt pgtype.Timestamptz `json:"after_started_at"`
+	Lim            int32              `json:"lim"`
 }
 
-// Newest first, for one search or (search_id NULL) every live one.
-func (q *Queries) ListRuns(ctx context.Context, arg ListRunsParams) ([]SearchRun, error) {
-	rows, err := q.db.Query(ctx, listRuns, arg.SearchID, arg.LimitCount)
+// One page of runs, newest first, for one search or (search_id NULL) every
+// live one, after the (started_at, id) of the last run on the page before
+// (app.Paginate).
+func (q *Queries) PageRuns(ctx context.Context, arg PageRunsParams) ([]SearchRun, error) {
+	rows, err := q.db.Query(ctx, pageRuns,
+		arg.SearchID,
+		arg.AfterID,
+		arg.AfterStartedAt,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -122,14 +144,4 @@ func (q *Queries) ListRuns(ctx context.Context, arg ListRunsParams) ([]SearchRun
 		return nil, err
 	}
 	return items, nil
-}
-
-const markSearchRun = `-- name: MarkSearchRun :exec
-UPDATE searches SET last_run_at = NOW()
-WHERE id = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) MarkSearchRun(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, markSearchRun, id)
-	return err
 }

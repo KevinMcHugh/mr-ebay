@@ -39,6 +39,12 @@
 <div class="matches">
   {{$back := .Path}}{{range .Matches}}{{template "matchCard" (card . $back)}}{{end}}
 </div>
+{{if or .Next .Later}}
+<p class="row">
+  {{if .Later}}<a href="/searches/{{.Search.ID}}?status={{.Tab}}">← Newest {{if ne .Tab "all"}}{{.Tab}} {{end}}matches</a>{{end}}
+  {{if .Next}}<a href="/searches/{{.Search.ID}}?status={{.Tab}}&amp;after={{.Next}}">Older matches →</a>{{end}}
+</p>
+{{end}}
 {{else}}
 <div class="panel muted">{{if .Search.LastRunAt}}No {{if ne .Tab "all"}}{{.Tab}} {{end}}matches.{{else}}This search has not run yet. Run it to fetch matches from eBay.{{end}}</div>
 {{end}}
