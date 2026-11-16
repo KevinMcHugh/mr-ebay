@@ -32,15 +32,16 @@ sprite exec -- bash -lc "cd ~/$APP && DATABASE_URL='$DSN' dbmate --migrations-di
 sprite exec -- bash -lc "DATABASE_URL='$DSN' ~/$APP/bin/server keys create --name you"   # SAVE THE KEY
 
 # PUBLIC_URL must be the https URL, because OAuth discovery advertises it.
+# EBAY_TOKEN_URL is what deploy/connector.sh printed (see below).
 sprite exec -- bash -lc "/.sprite/bin/sprite-env services create $APP \
   --cmd /home/sprite/$APP/bin/server --dir /home/sprite/$APP \
   --needs postgres --http-port 8080 \
-  --env 'DATABASE_URL=$DSN,PORT=8080,PUBLIC_URL=https://$APP-<org>.sprites.app,EBAY_CLIENT_ID=…,EBAY_CLIENT_SECRET=…' \
+  --env 'DATABASE_URL=$DSN,PORT=8080,PUBLIC_URL=https://$APP-<org>.sprites.app,EBAY_TOKEN_URL=https://api.sprites.dev/v1/gateway/custom_api/conn_…/identity/v1/oauth2/token' \
   --no-stream"
 sprite config update -s $APP --url-auth public
 ```
 
-`EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` are the production keyset from developer.ebay.com. They go in the service's `--env` like everything else, never in a file ([configuration.md](configuration.md)). Add `EBAY_ENV=sandbox` to use sandbox keys. Without them the app still runs, but cannot search eBay.
+The eBay keyset (the production App ID and Cert ID from developer.ebay.com) never goes on the sprite. Before creating the service, store it in a Sprites connector from your own machine, `SPRITES_TOKEN=… deploy/connector.sh mr-ebay-ebay https://api.ebay.com /identity/v1/oauth2/token $APP`, and use the token URL it prints ([configuration.md](configuration.md)). For sandbox keys, use `https://api.sandbox.ebay.com` and add `EBAY_ENV=sandbox`. Without a connector the app still runs, but cannot search eBay.
 
 The sprite needs the Go version in `go.mod`. `go build` fetches that toolchain itself if the installed Go is older.
 

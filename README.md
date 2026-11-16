@@ -21,7 +21,7 @@ make dev                 # migrate, then serve on :8080
 make key NAME=you        # in another terminal: mint an api key (printed once)
 ```
 
-Open http://localhost:8080, sign in with the key, save a search, and press Run now (with eBay credentials set; see [docs/deploy.md](docs/deploy.md)). From a script:
+Open http://localhost:8080, sign in with the key, save a search, and press Run now (with eBay credentials exported; see [docs/configuration.md](docs/configuration.md)). From a script:
 
 ```sh
 curl -H "Authorization: Bearer mre_…" localhost:8080/api/searches \
@@ -37,7 +37,7 @@ api/openapi.yaml        the HTTP API's contract (and which operations are public
 cmd/server/             the binary: serve, keys, invites
 db/migrations/          dbmate migrations
 db/queries/             sqlc queries
-deploy/                 sprite scripts: run-postgres.sh, redeploy.sh
+deploy/                 sprite scripts: run-postgres.sh, redeploy.sh, connector.sh
 docs/                   how it works and why
 internal/app/           Store, Links, shared errors and the app's name
 internal/auth/          key/token formats, middleware, who-is-calling context
@@ -71,5 +71,5 @@ internal/db/gen/        sqlc output: do not edit
 - [Adding a resource](docs/adding-a-resource.md): the end-to-end recipe
 - [Auth](docs/auth.md): keys, OAuth, invites, sessions, and public versus private
 - [Deploy](docs/deploy.md): the sprites.dev recipe (by CLI or through the Fly.io MCP connector) and CI redeploys
-- [Configuration](docs/configuration.md): config and secrets, eBay keys included, live on the sprite service's environment, never in env files
+- [Configuration](docs/configuration.md): the eBay keyset lives in a Sprites connector, never on the sprite, and other config on the sprite service's environment, never in env files
 - [CLAUDE.md](CLAUDE.md): orientation for Claude Code sessions

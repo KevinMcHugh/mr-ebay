@@ -44,8 +44,8 @@ const (
 
 var (
 	// ErrNotConfigured is returned by FromEnv, and by a nil-config client,
-	// when there are no eBay credentials. The app still runs without them.
-	ErrNotConfigured = errors.New("eBay is not configured: set EBAY_CLIENT_ID and EBAY_CLIENT_SECRET")
+	// when it has no way to get a token. The app still runs without one.
+	ErrNotConfigured = errors.New("eBay is not configured: set EBAY_TOKEN_URL to its Sprites connector (or, off a sprite, EBAY_CLIENT_ID and EBAY_CLIENT_SECRET)")
 	// ErrRateLimited is eBay refusing for quota (HTTP 429).
 	ErrRateLimited = errors.New("eBay rate limit reached; try again later")
 )
@@ -128,12 +128,18 @@ func (e *APIError) Error() string {
 // Client
 // -----------------------------------------------------------------------------
 
-// Config is what a Client needs.
+// Config is what a Client needs: BaseURL, and a way to get an application
+// token. On a sprite that is TokenURL alone, a Sprites connector that adds
+// the keyset as HTTP Basic on its way to eBay's token endpoint, so the
+// secret never reaches the app (docs/configuration.md). Off a sprite, where
+// there is no gateway, it is ClientID and ClientSecret.
 type Config struct {
 	ClientID     string
 	ClientSecret string
 	// BaseURL is ProductionBase, SandboxBase, or a fake's URL in tests.
 	BaseURL string
+	// TokenURL defaults to BaseURL's token endpoint.
+	TokenURL string
 	// HTTP defaults to a client with a 30 second timeout.
 	HTTP *http.Client
 }
@@ -154,19 +160,23 @@ func New(cfg Config) *Client {
 		cfg.BaseURL = ProductionBase
 	}
 	cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
+	if cfg.TokenURL == "" && cfg.ClientSecret != "" {
+		cfg.TokenURL = cfg.BaseURL + "/identity/v1/oauth2/token"
+	}
 	if cfg.HTTP == nil {
 		cfg.HTTP = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &Client{cfg: cfg, now: time.Now}
 }
 
-// FromEnv builds a Client from EBAY_CLIENT_ID, EBAY_CLIENT_SECRET and
-// EBAY_ENV ("sandbox" for the sandbox; anything else is production), or
+// FromEnv builds a Client from EBAY_TOKEN_URL (a Sprites connector), or
+// EBAY_CLIENT_ID and EBAY_CLIENT_SECRET off a sprite, and EBAY_ENV
+// ("sandbox" for the sandbox; anything else is production), or
 // EBAY_API_BASE to point it somewhere else entirely. It returns
-// ErrNotConfigured when the credentials are missing.
+// ErrNotConfigured when it has no way to get a token.
 func FromEnv() (*Client, error) {
-	id, secret := os.Getenv("EBAY_CLIENT_ID"), os.Getenv("EBAY_CLIENT_SECRET")
-	if id == "" || secret == "" {
+	id, secret, tokenURL := os.Getenv("EBAY_CLIENT_ID"), os.Getenv("EBAY_CLIENT_SECRET"), os.Getenv("EBAY_TOKEN_URL")
+	if tokenURL == "" && (id == "" || secret == "") {
 		return nil, ErrNotConfigured
 	}
 	base := ProductionBase
@@ -176,14 +186,14 @@ func FromEnv() (*Client, error) {
 	if b := os.Getenv("EBAY_API_BASE"); b != "" {
 		base = b
 	}
-	return New(Config{ClientID: id, ClientSecret: secret, BaseURL: base}), nil
+	return New(Config{ClientID: id, ClientSecret: secret, BaseURL: base, TokenURL: tokenURL}), nil
 }
 
 // Search runs q, paging until it has q.MaxItems or eBay runs out. eBay
 // takes one category per request, so a query with several runs once per
 // category and merges the results, keeping the first sighting of an item.
 func (c *Client) Search(ctx context.Context, q Query) (Result, error) {
-	if c == nil || c.cfg.ClientID == "" || c.cfg.ClientSecret == "" {
+	if !c.configured() {
 		return Result{}, ErrNotConfigured
 	}
 	q = normalize(q)
@@ -288,6 +298,12 @@ func (c *Client) page(ctx context.Context, q Query, category string, offset, lim
 	}
 }
 
+// configured reports whether c can get a token: from a connector, or with
+// a keyset it holds.
+func (c *Client) configured() bool {
+	return c != nil && c.cfg.TokenURL != "" && (c.cfg.ClientSecret == "" || c.cfg.ClientID != "")
+}
+
 // accessToken returns a cached application token, minting a new one when
 // there is none or it is within a few minutes of expiring.
 func (c *Client) accessToken(ctx context.Context) (string, error) {
@@ -297,11 +313,14 @@ func (c *Client) accessToken(ctx context.Context) (string, error) {
 		return c.token, nil
 	}
 	form := url.Values{"grant_type": {"client_credentials"}, "scope": {Scope}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.BaseURL+"/identity/v1/oauth2/token", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", err
 	}
-	req.SetBasicAuth(c.cfg.ClientID, c.cfg.ClientSecret)
+	// With no secret here, TokenURL is a connector that adds it.
+	if c.cfg.ClientSecret != "" {
+		req.SetBasicAuth(c.cfg.ClientID, c.cfg.ClientSecret)
+	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := c.cfg.HTTP.Do(req)
 	if err != nil {

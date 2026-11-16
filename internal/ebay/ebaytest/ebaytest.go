@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"strconv"
 	"sync"
@@ -50,6 +51,32 @@ func New(t testing.TB) *Server {
 	s.Server = httptest.NewServer(mux)
 	t.Cleanup(s.Close)
 	return s
+}
+
+// Connector starts a fake Sprites connector in front of the fake's token
+// endpoint, as deploy/connector.sh makes one: it adds the keyset as HTTP
+// Basic, and fails the test if the client sent a credential of its own. It
+// returns the URL to use as ebay.Config.TokenURL, with no ClientID or
+// ClientSecret.
+func (s *Server) Connector(t testing.TB) string {
+	target, err := url.Parse(s.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	c := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/identity/v1/oauth2/token" {
+			http.Error(w, "endpoint not allowed", http.StatusForbidden)
+			return
+		}
+		if a := r.Header.Get("Authorization"); a != "" {
+			t.Errorf("the client sent a credential to the connector: %q", a)
+		}
+		r.SetBasicAuth(ClientID, ClientSecret)
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(c.Close)
+	return c.URL + "/identity/v1/oauth2/token"
 }
 
 // Item is an item summary as eBay shapes one: a fixed-price listing at

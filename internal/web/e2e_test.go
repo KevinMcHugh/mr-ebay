@@ -68,7 +68,7 @@ func newEnv(t *testing.T) *env {
 	t.Cleanup(ts.Close)
 	store := app.NewStore(pool)
 	fake := ebaytest.New(t)
-	eb := ebay.New(ebay.Config{ClientID: ebaytest.ClientID, ClientSecret: ebaytest.ClientSecret, BaseURL: fake.URL})
+	eb := ebay.New(ebay.Config{BaseURL: fake.URL, TokenURL: fake.Connector(t)}) // as on the sprite
 	ts.Config.Handler = web.New(store, eb, ts.URL).Handler()
 
 	raw, err := auth.GenerateKey()
