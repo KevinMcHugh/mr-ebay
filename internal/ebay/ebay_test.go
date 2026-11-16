@@ -179,12 +179,44 @@ func TestTokenIsCachedAndRefreshed(t *testing.T) {
 	}
 }
 
+func TestConnector(t *testing.T) {
+	ctx := context.Background()
+	fake := ebaytest.New(t)
+	fake.Items = []map[string]any{ebaytest.Item("v1|1|0", "Beta jacket", "45.00")}
+	c := ebay.New(ebay.Config{BaseURL: fake.URL, TokenURL: fake.Connector(t)})
+	res, err := c.Search(ctx, ebay.Query{Keywords: "beta"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Items) != 1 || fake.Tokens() != 1 {
+		t.Fatalf("got %d items and %d tokens, want 1 and 1", len(res.Items), fake.Tokens())
+	}
+	// A revoked token is renewed through the connector too.
+	fake.RevokeNext = true
+	if _, err := c.Search(ctx, ebay.Query{Keywords: "beta"}); err != nil || fake.Tokens() != 2 {
+		t.Fatalf("after revoke: %v, %d tokens", err, fake.Tokens())
+	}
+
+	t.Setenv("EBAY_CLIENT_ID", "")
+	t.Setenv("EBAY_CLIENT_SECRET", "")
+	t.Setenv("EBAY_API_BASE", fake.URL)
+	t.Setenv("EBAY_TOKEN_URL", fake.Connector(t))
+	fromEnv, err := ebay.FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fromEnv.Search(ctx, ebay.Query{Keywords: "beta"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestErrors(t *testing.T) {
 	ctx := context.Background()
 	if _, err := ebay.New(ebay.Config{}).Search(ctx, ebay.Query{}); !errors.Is(err, ebay.ErrNotConfigured) {
 		t.Fatalf("no credentials: %v", err)
 	}
 	t.Setenv("EBAY_CLIENT_ID", "")
+	t.Setenv("EBAY_TOKEN_URL", "")
 	if _, err := ebay.FromEnv(); !errors.Is(err, ebay.ErrNotConfigured) {
 		t.Fatalf("FromEnv: %v", err)
 	}

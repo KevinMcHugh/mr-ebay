@@ -79,7 +79,7 @@ func serve() error {
 	if errors.Is(err, ebay.ErrNotConfigured) {
 		// Still serve: searches can be saved and browsed, and running one
 		// says why it cannot.
-		slog.Warn("eBay is not configured; set EBAY_CLIENT_ID and EBAY_CLIENT_SECRET to search it")
+		slog.Warn("eBay is not configured; set EBAY_TOKEN_URL to its Sprites connector to search it (docs/configuration.md)")
 		eb = ebay.New(ebay.Config{})
 	}
 	srv := web.New(app.NewStore(pool), eb, issuer)
