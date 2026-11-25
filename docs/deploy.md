@@ -41,7 +41,7 @@ sprite exec -- bash -lc "/.sprite/bin/sprite-env services create $APP \
 sprite config update -s $APP --url-auth public
 ```
 
-The eBay keyset (the production App ID and Cert ID from developer.ebay.com) never goes on the sprite. Before creating the service, store it in a Sprites connector from your own machine, `SPRITES_TOKEN=… deploy/connector.sh mr-ebay-ebay https://api.ebay.com /identity/v1/oauth2/token $APP`, and use the token URL it prints ([configuration.md](configuration.md)). For sandbox keys, use `https://api.sandbox.ebay.com` and add `EBAY_ENV=sandbox`. Without a connector the app still runs, but cannot search eBay.
+The eBay keyset (the production App ID and Cert ID from developer.ebay.com) never goes on the sprite. Before creating the service, store it in a Sprites connector from your own machine, `SPRITES_TOKEN=… deploy/connector.sh mr-ebay-ebay https://api.ebay.com/identity/v1/oauth2/token $APP`, and use the token URL it prints ([configuration.md](configuration.md)). For sandbox keys, use `https://api.sandbox.ebay.com/identity/v1/oauth2/token` and add `EBAY_ENV=sandbox`. Without a connector the app still runs, but cannot search eBay.
 
 The sprite needs the Go version in `go.mod`. `go build` fetches that toolchain itself if the installed Go is older.
 

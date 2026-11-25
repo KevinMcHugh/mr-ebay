@@ -17,7 +17,7 @@ There is no eBay provider in the connector catalog, so this uses the **Custom AP
 Create it, or rotate the keyset, on your own machine:
 
 ```sh
-SPRITES_TOKEN=… deploy/connector.sh mr-ebay-ebay https://api.ebay.com /identity/v1/oauth2/token mcp-mr-ebay
+SPRITES_TOKEN=… deploy/connector.sh mr-ebay-ebay https://api.ebay.com/identity/v1/oauth2/token mcp-mr-ebay
 ```
 
 It asks for the App ID (client id) and Cert ID (client secret) without echoing them, sends them to the Sprites API on stdin, and prints the token URL to put on the service's environment. Running it again with the same name replaces the keyset in place. Only sprites whose name starts with `mcp-mr-ebay` may use the connector, and only for that one path. `SPRITES_TOKEN` is the token from [sprites.dev/account](https://sprites.dev/account), the same kind CI deploys with.
