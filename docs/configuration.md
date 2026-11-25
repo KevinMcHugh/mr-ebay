@@ -1,6 +1,6 @@
 # Configuration and secrets
 
-**The rule: secrets live in Sprites connectors, and everything else reaches the app as environment variables on its sprite service** (`sprite-env services create … --env`). No env files: none on the sprite, none in the repo, and no code that loads one (no dotenv). No secret on the service's environment either. This is [app-template](https://github.com/KevinMcHugh/app-template)'s rule, and its `docs/configuration.md` has the full reasoning.
+**The rule: secrets live in Sprites connectors, and everything else reaches the app as environment variables on its sprite service** (`sprite-env services create … --env`). No env files: none on the sprite, none in the repo, and no code that loads one (no dotenv). No secret on the service's environment either, unless the app itself must read it: `EBAY_DELETION_TOKEN` is the one such value (below). This is [app-template](https://github.com/KevinMcHugh/app-template)'s rule, and its `docs/configuration.md` has the full reasoning.
 
 ## The eBay keyset: a Sprites connector
 
@@ -35,11 +35,14 @@ Run it yourself, not through Claude: a secret typed into a conversation has left
 | `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` | `ebay.FromEnv` | **off a sprite only**: local development, where there is no gateway. Never set on the sprite, because the connector holds them |
 | `EBAY_ENV` | `ebay.FromEnv` | `sandbox` for the sandbox; anything else is production. Must match the connector's base URL |
 | `EBAY_API_BASE` | `ebay.FromEnv` | overrides the eBay host entirely; never set in production |
+| `EBAY_DELETION_TOKEN` | `cmd/server serve` | the verification token for eBay's Marketplace Account Deletion endpoint ([design.md](design.md)): 32 to 80 letters, digits, `_` or `-`, entered in eBay's portal too. It stays on the service's environment, because the app itself must hash it to answer eBay's challenge, so a connector cannot hold it. It only proves the endpoint is yours to eBay. Unset, the challenge answers 503 |
 | `TEST_DATABASE_URL` | tests only | a scratch database the end-to-end tests may wipe; never set on a sprite |
 
 Read settings once, at startup, in `cmd/server/main.go`, or in a `FromEnv` constructor that main calls (`ebay.FromEnv`), and pass the values down. Packages below main never call `os.Getenv`, so tests can configure them directly. An optional integration that is not configured should leave the app running and say what is missing, not crash it.
 
 The client sends HTTP Basic only when it holds the secret. Tests run it as it runs on the sprite: `ebaytest.Server.Connector` is a fake connector in front of the fake eBay that adds the keyset and fails the test if the client sent a credential of its own. The end-to-end tests use it too.
+
+Make the deletion token with `openssl rand -hex 32`, which gives 64 hex characters.
 
 ## Setting and changing values on the sprite
 
@@ -50,7 +53,7 @@ sprite exec -s mcp-mr-ebay -- bash -lc '/.sprite/bin/sprite-env services delete 
   /.sprite/bin/sprite-env services create mcp-mr-ebay \
     --cmd /home/sprite/mcp-mr-ebay/bin/server --args serve --dir /home/sprite/mcp-mr-ebay \
     --needs postgres --http-port 8080 \
-    --env "DATABASE_URL=postgres:///mcp-mr-ebay?host=/var/run/postgresql&sslmode=disable,PORT=8080,PUBLIC_URL=https://mcp-mr-ebay-b2mxg.sprites.app,EBAY_TOKEN_URL=https://api.sprites.dev/v1/gateway/custom_api/conn_…/identity/v1/oauth2/token" \
+    --env "DATABASE_URL=postgres:///mcp-mr-ebay?host=/var/run/postgresql&sslmode=disable,PORT=8080,PUBLIC_URL=https://mcp-mr-ebay-b2mxg.sprites.app,EBAY_TOKEN_URL=https://api.sprites.dev/v1/gateway/custom_api/conn_…/identity/v1/oauth2/token,EBAY_DELETION_TOKEN=…" \
     --no-stream'
 ```
 

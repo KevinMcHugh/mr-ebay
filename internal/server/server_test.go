@@ -19,11 +19,15 @@ import (
 )
 
 // TestPublicOperations pins which operations anyone may call. Searches and
-// what they find are personal, so today that is none. Update this only when
-// the spec deliberately marks an operation `security: []`.
+// what they find are personal, so only eBay's Marketplace Account Deletion
+// endpoint is public: eBay calls it with no credential, its challenge
+// reveals nothing, and a notice must carry eBay's signature to do anything.
+// Update this only when the spec deliberately marks an operation
+// `security: []`.
 func TestPublicOperations(t *testing.T) {
-	if got := slices.Sorted(maps.Keys(server.PublicOperations())); len(got) != 0 {
-		t.Fatalf("public operations %v, want none", got)
+	want := []string{"GET /ebay/account-deletion", "POST /ebay/account-deletion"}
+	if got := slices.Sorted(maps.Keys(server.PublicOperations())); !slices.Equal(got, want) {
+		t.Fatalf("public operations %v, want %v", got, want)
 	}
 }
 

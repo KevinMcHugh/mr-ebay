@@ -25,6 +25,12 @@ type Querier interface {
 	DeleteInvite(ctx context.Context, id string) (int64, error)
 	DeleteSearch(ctx context.Context, id string) (int64, error)
 	FinishRun(ctx context.Context, arg FinishRunParams) (SearchRun, error)
+	// An eBay user closed their account (Marketplace Account Deletion), so
+	// nothing of theirs may stay: their username, their feedback, and the seller
+	// object in eBay's raw summary. The listing itself is about the item, not
+	// the person, so it stays. Unlike every other query this one includes
+	// soft-deleted rows, because a deleted row still holds the data.
+	ForgetSeller(ctx context.Context, seller string) (int64, error)
 	GetAPIKey(ctx context.Context, id string) (ApiKey, error)
 	GetAPIKeyByHash(ctx context.Context, keyHash string) (ApiKey, error)
 	GetListing(ctx context.Context, id string) (Listing, error)

@@ -64,6 +64,16 @@ func (e RunTrigger) Valid() bool {
 	}
 }
 
+// AccountDeletionNotice eBay's notice, kept as the exact bytes it sent, because the signature
+// covers them: {"metadata":{"topic":"MARKETPLACE_ACCOUNT_DELETION",…},
+// "notification":{"data":{"username","userId","eiasToken"},…}}.
+type AccountDeletionNotice = json.RawMessage
+
+// DeletionChallengeResponse defines model for DeletionChallengeResponse.
+type DeletionChallengeResponse struct {
+	ChallengeResponse string `json:"challengeResponse"`
+}
+
 // EbaySearchResult defines model for EbaySearchResult.
 type EbaySearchResult struct {
 	Listings []Listing `json:"listings"`
@@ -317,6 +327,9 @@ type SearchId = string
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
 
+// NotConfigured defines model for NotConfigured.
+type NotConfigured = Error
+
 // NotFound defines model for NotFound.
 type NotFound = Error
 
@@ -325,6 +338,16 @@ type Unprocessable = Error
 
 // Upstream defines model for Upstream.
 type Upstream = Error
+
+// EbayDeletionChallengeParams defines parameters for EbayDeletionChallenge.
+type EbayDeletionChallengeParams struct {
+	ChallengeCode string `form:"challenge_code" json:"challenge_code"`
+}
+
+// EbayAccountDeletionParams defines parameters for EbayAccountDeletion.
+type EbayAccountDeletionParams struct {
+	XEBAYSIGNATURE string `json:"X-EBAY-SIGNATURE"`
+}
 
 // SearchEbayParams defines parameters for SearchEbay.
 type SearchEbayParams struct {
@@ -375,6 +398,9 @@ type ListMatchesParams struct {
 	After After `form:"after,omitempty" json:"after,omitempty"`
 }
 
+// EbayAccountDeletionJSONRequestBody defines body for EbayAccountDeletion for application/json ContentType.
+type EbayAccountDeletionJSONRequestBody = AccountDeletionNotice
+
 // SetMatchStatusJSONRequestBody defines body for SetMatchStatus for application/json ContentType.
 type SetMatchStatusJSONRequestBody = MatchStatusUpdate
 
@@ -386,6 +412,12 @@ type UpdateSearchJSONRequestBody = SearchUpdate
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// EbayDeletionChallenge Answer eBay's check that this notification endpoint is ours
+	// (GET /ebay/account-deletion)
+	EbayDeletionChallenge(w http.ResponseWriter, r *http.Request, params EbayDeletionChallengeParams)
+	// EbayAccountDeletion Forget an eBay user who closed their account
+	// (POST /ebay/account-deletion)
+	EbayAccountDeletion(w http.ResponseWriter, r *http.Request, params EbayAccountDeletionParams)
 	// SearchEbay Search eBay without saving anything
 	// (GET /ebay/search)
 	SearchEbay(w http.ResponseWriter, r *http.Request, params SearchEbayParams)
@@ -427,6 +459,18 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// EbayDeletionChallenge Answer eBay's check that this notification endpoint is ours
+// (GET /ebay/account-deletion)
+func (_ Unimplemented) EbayDeletionChallenge(w http.ResponseWriter, r *http.Request, params EbayDeletionChallengeParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// EbayAccountDeletion Forget an eBay user who closed their account
+// (POST /ebay/account-deletion)
+func (_ Unimplemented) EbayAccountDeletion(w http.ResponseWriter, r *http.Request, params EbayAccountDeletionParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // SearchEbay Search eBay without saving anything
 // (GET /ebay/search)
@@ -508,6 +552,84 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// EbayDeletionChallenge operation middleware
+func (siw *ServerInterfaceWrapper) EbayDeletionChallenge(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EbayDeletionChallengeParams
+
+	// ------------- Required query parameter "challenge_code" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "challenge_code", r.URL.Query(), &params.ChallengeCode, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "challenge_code"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "challenge_code", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EbayDeletionChallenge(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EbayAccountDeletion operation middleware
+func (siw *ServerInterfaceWrapper) EbayAccountDeletion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EbayAccountDeletionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-EBAY-SIGNATURE" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EBAY-SIGNATURE")]; found {
+		var XEBAYSIGNATURE string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EBAY-SIGNATURE", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EBAY-SIGNATURE", valueList[0], &XEBAYSIGNATURE, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EBAY-SIGNATURE", Err: err})
+			return
+		}
+
+		params.XEBAYSIGNATURE = XEBAYSIGNATURE
+
+	} else {
+		err := fmt.Errorf("Header parameter X-EBAY-SIGNATURE is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-EBAY-SIGNATURE", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EbayAccountDeletion(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // SearchEbay operation middleware
 func (siw *ServerInterfaceWrapper) SearchEbay(w http.ResponseWriter, r *http.Request) {
@@ -1138,6 +1260,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/runs", wrapper.ListRuns)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/ebay/account-deletion", wrapper.EbayDeletionChallenge)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/ebay/account-deletion", wrapper.EbayAccountDeletion)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/ebay/search", wrapper.SearchEbay)
 	})
 
@@ -1146,6 +1274,8 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 type BadRequestJSONResponse Error
 
+type NotConfiguredJSONResponse Error
+
 type NotFoundJSONResponse Error
 
 type UnauthorizedTextResponse string
@@ -1153,6 +1283,115 @@ type UnauthorizedTextResponse string
 type UnprocessableJSONResponse Error
 
 type UpstreamJSONResponse Error
+
+type EbayDeletionChallengeRequestObject struct {
+	Params EbayDeletionChallengeParams
+}
+
+type EbayDeletionChallengeResponseObject interface {
+	VisitEbayDeletionChallengeResponse(w http.ResponseWriter) error
+}
+
+type EbayDeletionChallenge200JSONResponse DeletionChallengeResponse
+
+func (response EbayDeletionChallenge200JSONResponse) VisitEbayDeletionChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EbayDeletionChallenge422JSONResponse struct{ UnprocessableJSONResponse }
+
+func (response EbayDeletionChallenge422JSONResponse) VisitEbayDeletionChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EbayDeletionChallenge503JSONResponse struct{ NotConfiguredJSONResponse }
+
+func (response EbayDeletionChallenge503JSONResponse) VisitEbayDeletionChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EbayAccountDeletionRequestObject struct {
+	Params EbayAccountDeletionParams
+	Body   *EbayAccountDeletionJSONRequestBody
+}
+
+type EbayAccountDeletionResponseObject interface {
+	VisitEbayAccountDeletionResponse(w http.ResponseWriter) error
+}
+
+type EbayAccountDeletion204Response struct {
+}
+
+func (response EbayAccountDeletion204Response) VisitEbayAccountDeletionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type EbayAccountDeletion400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response EbayAccountDeletion400JSONResponse) VisitEbayAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EbayAccountDeletion412JSONResponse Error
+
+func (response EbayAccountDeletion412JSONResponse) VisitEbayAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EbayAccountDeletion502JSONResponse struct{ UpstreamJSONResponse }
+
+func (response EbayAccountDeletion502JSONResponse) VisitEbayAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type SearchEbayRequestObject struct {
 	Params SearchEbayParams
@@ -1799,6 +2038,12 @@ func (response RunSearch502JSONResponse) VisitRunSearchResponse(w http.ResponseW
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// EbayDeletionChallenge Answer eBay's check that this notification endpoint is ours
+	// (GET /ebay/account-deletion)
+	EbayDeletionChallenge(ctx context.Context, request EbayDeletionChallengeRequestObject) (EbayDeletionChallengeResponseObject, error)
+	// EbayAccountDeletion Forget an eBay user who closed their account
+	// (POST /ebay/account-deletion)
+	EbayAccountDeletion(ctx context.Context, request EbayAccountDeletionRequestObject) (EbayAccountDeletionResponseObject, error)
 	// SearchEbay Search eBay without saving anything
 	// (GET /ebay/search)
 	SearchEbay(ctx context.Context, request SearchEbayRequestObject) (SearchEbayResponseObject, error)
@@ -1874,6 +2119,65 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// EbayDeletionChallenge operation middleware
+func (sh *strictHandler) EbayDeletionChallenge(w http.ResponseWriter, r *http.Request, params EbayDeletionChallengeParams) {
+	var request EbayDeletionChallengeRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.EbayDeletionChallenge(ctx, request.(EbayDeletionChallengeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "EbayDeletionChallenge")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(EbayDeletionChallengeResponseObject); ok {
+		if err := validResponse.VisitEbayDeletionChallengeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// EbayAccountDeletion operation middleware
+func (sh *strictHandler) EbayAccountDeletion(w http.ResponseWriter, r *http.Request, params EbayAccountDeletionParams) {
+	var request EbayAccountDeletionRequestObject
+
+	request.Params = params
+
+	var body EbayAccountDeletionJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.EbayAccountDeletion(ctx, request.(EbayAccountDeletionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "EbayAccountDeletion")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(EbayAccountDeletionResponseObject); ok {
+		if err := validResponse.VisitEbayAccountDeletionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // SearchEbay operation middleware
@@ -2209,66 +2513,78 @@ func (sh *strictHandler) RunSearch(w http.ResponseWriter, r *http.Request, searc
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"DfmZ/aVC4Z92kM6jezty7f8bAA==",
+	"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",
+	"2UKfPpOf+f8Lzfsn09QDYsWQa///AA==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

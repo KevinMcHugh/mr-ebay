@@ -32,7 +32,7 @@ var templateFS embed.FS
 // Server holds what the routes need.
 type Server struct {
 	Store  *app.Store
-	Ebay   ebay.Searcher
+	Ebay   ebay.API
 	Links  app.Links
 	API    *server.Server // the JSON API, mounted at /api
 	OAuth  *oauth.Handler
@@ -45,7 +45,7 @@ type Server struct {
 // New assembles the server on store and the eBay client: the API and the
 // MCP tools over the same endpoints, and OAuth issuing for issuer, which is
 // also the origin of every link in a response.
-func New(store *app.Store, eb ebay.Searcher, issuer string) *Server {
+func New(store *app.Store, eb ebay.API, issuer string) *Server {
 	links := app.NewLinks(issuer)
 	mcpServer := appmcp.NewServer(store, eb, links)
 	return &Server{

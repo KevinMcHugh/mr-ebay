@@ -2,7 +2,9 @@
 // process, plus the admin commands that mint credentials. See README.md.
 //
 //	server [serve]                    run the server (DATABASE_URL, PORT, PUBLIC_URL,
-//	                                  EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, EBAY_ENV)
+//	                                  EBAY_TOKEN_URL or EBAY_CLIENT_ID and
+//	                                  EBAY_CLIENT_SECRET, EBAY_ENV,
+//	                                  EBAY_DELETION_TOKEN)
 //	server keys create --name NAME    mint an api key (printed once)
 //	server keys list                  list live api keys
 //	server keys rotate --id ID        replace a key, keeping its name
@@ -83,7 +85,13 @@ func serve() error {
 		eb = ebay.New(ebay.Config{})
 	}
 	srv := web.New(app.NewStore(pool), eb, issuer)
-	slog.Info("listening", "port", port, "public_url", issuer)
+	// The account deletion endpoint answers eBay's challenge with this; it
+	// is a value the app itself must hold, so it cannot be a connector.
+	srv.API.DeletionToken = os.Getenv("EBAY_DELETION_TOKEN")
+	if srv.API.DeletionToken == "" {
+		slog.Warn("eBay account deletion is not configured; set EBAY_DELETION_TOKEN (docs/configuration.md)")
+	}
+	slog.Info("listening", "port", port, "public_url", issuer, "ebay_deletion_url", srv.API.DeletionURL())
 	hs := &http.Server{Addr: ":" + port, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	return hs.ListenAndServe()
 }

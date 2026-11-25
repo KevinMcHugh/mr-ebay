@@ -16,6 +16,7 @@ The server does the mechanical work: calling eBay, de-duplicating, tracking pric
 | eBay client and a fake eBay for tests | **done** (`internal/ebay`, `internal/ebay/ebaytest`) |
 | Ad-hoc search, running a saved search, matches, listing detail, run log: REST and MCP | **done** (`internal/server/listings`, `matches`, `runs`) |
 | Pages: match grid with run and status buttons, listing page with price history | **done** (`internal/web`) |
+| eBay Marketplace Account Deletion notices (`/api/ebay/account-deletion`) | **done** (`internal/server/deletion`) |
 | Watching and alerts | planned, step 5 |
 
 ## Data model
@@ -78,6 +79,27 @@ The rest:
 - `GET /api/searches` (`list_searches`) pages the same way.
 
 **Tests:** `internal/web/run_e2e_test.go` drives all of this against Postgres and the fake eBay. It covers new matches, a run with no changes, a price drop, statuses surviving a re-run, a second search sharing a listing but not its status, an eBay failure logged as a run, an ad-hoc search that stores nothing, and the 502 when eBay is not configured.
+
+## Marketplace Account Deletion (done)
+
+eBay keeps an app's **production keyset disabled** until the app takes Marketplace Account Deletion notices (or eBay grants it an exemption for storing no eBay user data). When an eBay user closes their account, eBay posts a notice to every app, and each must forget that user. Mr. eBay stores eBay users only as the sellers of listings: `listings.seller`, `listings.seller_feedback_pct`, and the `seller` object in `listings.data`. So forgetting one scrubs those three from every listing they sold, soft-deleted ones included (`ForgetSeller`), and keeps the listing, which is about the item. A later run that finds one of their listings again would store the seller again, but eBay stops serving a closed account's listings.
+
+`internal/server/deletion` holds both operations. They are public (`security: []`), because eBay calls them with no credential, and `TestPublicOperations` pins them:
+
+- **`GET /api/ebay/account-deletion?challenge_code=…`** (`ChallengeEndpoint`): eBay calls this once, when the endpoint is registered. The answer is `{"challengeResponse": hex(sha256(challenge_code + EBAY_DELETION_TOKEN + endpoint URL))}`. The URL is `PUBLIC_URL` + `/api/ebay/account-deletion`, which the server logs at startup as `ebay_deletion_url`; it must match what is entered in eBay's portal exactly. Without `EBAY_DELETION_TOKEN` the answer is a 503.
+- **`POST /api/ebay/account-deletion`** (`NotifyEndpoint`): the body is `{"metadata":{"topic":"MARKETPLACE_ACCOUNT_DELETION",…},"notification":{"data":{"username","userId","eiasToken"},…}}`, and `X-EBAY-SIGNATURE` is base64 of `{"alg":"ecdsa","kid":…,"signature":…,"digest":"SHA1"}`. The endpoint fetches the public key for `kid` from eBay's Notification API (`GET {base}/commerce/notification/v1/public_key/{kid}`, with the application token the connector provides, cached for an hour by `ebay.Client.PublicKey`), and verifies the ECDSA signature over the SHA-1 of the body exactly as received. The spec types the body as `json.RawMessage` so the bytes survive decoding. Then it scrubs the user and answers 204. A signature that is missing, malformed or wrong is a 412, which is what eBay expects, and changes nothing. A key eBay will not serve, or eBay unreachable, is a 502, so eBay sends the notice again. Another topic, or a notice naming nobody, is acknowledged and ignored. The log records the notice id and how many listings changed, never the username.
+
+**Registering it**, at developer.ebay.com → Alerts & Notifications → Marketplace Account Deletion, once the sprite runs this code with `EBAY_DELETION_TOKEN` set ([configuration.md](configuration.md)):
+
+1. Notification endpoint URL: `https://mcp-mr-ebay-b2mxg.sprites.app/api/ebay/account-deletion` (the `ebay_deletion_url` in the startup log).
+2. Verification token: the same value as `EBAY_DELETION_TOKEN`.
+3. An alert email, then **Save**. eBay sends the challenge at once, and the page reports whether the answer matched.
+
+**Tests:** `internal/server/deletion/deletion_test.go` covers the challenge, a signed notice, the key cache, every way a signature can be wrong, an unknown key, another topic, and eBay not configured, against the fake eBay, which serves a signing key and signs notices (`ebaytest.Server.Sign`). `internal/web/deletion_e2e_test.go` drives both operations over HTTP against Postgres, with no credential: the challenge with and without a token, a forged notice changing nothing, and a real one scrubbing the seller from a live and a soft-deleted listing while another seller's listing stays.
+
+**What was checked, and what was not.** The challenge hash, the notice shape, the signature header and the public key call follow eBay's published contract as I know it; eBay's developer site could not be reached from the build environment. The challenge is checked by eBay itself when the endpoint is saved, so a mistake there shows at once. The signature check is the part to watch: if real notices come back 412 in the service log, that is where to look.
+
+**Cost.** eBay sends a notice for every closed eBay account, not only for users this app has seen, so the endpoint is called often, and each call can wake a paused sprite. If that costs too much, eBay's exemption is the alternative, but this app does keep sellers' usernames.
 
 ## Watching and alerts (step 5)
 

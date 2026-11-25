@@ -44,6 +44,7 @@ type env struct {
 	t      *testing.T
 	url    string
 	ebay   *ebaytest.Server
+	srv    *web.Server
 	store  *app.Store
 	key    string
 	keyID  string
@@ -69,7 +70,8 @@ func newEnv(t *testing.T) *env {
 	store := app.NewStore(pool)
 	fake := ebaytest.New(t)
 	eb := ebay.New(ebay.Config{BaseURL: fake.URL, TokenURL: fake.Connector(t)}) // as on the sprite
-	ts.Config.Handler = web.New(store, eb, ts.URL).Handler()
+	srv := web.New(store, eb, ts.URL)
+	ts.Config.Handler = srv.Handler()
 
 	raw, err := auth.GenerateKey()
 	if err != nil {
@@ -79,7 +81,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &env{t: t, url: ts.URL, ebay: fake, store: store, key: raw, keyID: key.ID, q: store.Queries, client: &http.Client{
+	return &env{t: t, url: ts.URL, ebay: fake, srv: srv, store: store, key: raw, keyID: key.ID, q: store.Queries, client: &http.Client{
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}
 }

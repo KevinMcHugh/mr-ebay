@@ -43,3 +43,13 @@ VALUES ($1, $2, $3, $4, $5);
 SELECT * FROM price_points
 WHERE listing_id = $1
 ORDER BY observed_at DESC, id DESC;
+
+-- name: ForgetSeller :execrows
+-- An eBay user closed their account (Marketplace Account Deletion), so
+-- nothing of theirs may stay: their username, their feedback, and the seller
+-- object in eBay's raw summary. The listing itself is about the item, not
+-- the person, so it stays. Unlike every other query this one includes
+-- soft-deleted rows, because a deleted row still holds the data.
+UPDATE listings
+SET seller = '', seller_feedback_pct = NULL, data = data - 'seller', updated_at = NOW()
+WHERE seller = sqlc.arg(seller)::text;
