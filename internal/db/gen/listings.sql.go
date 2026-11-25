@@ -11,6 +11,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const forgetSeller = `-- name: ForgetSeller :execrows
+UPDATE listings
+SET seller = '', seller_feedback_pct = NULL, data = data - 'seller', updated_at = NOW()
+WHERE seller = $1::text
+`
+
+// An eBay user closed their account (Marketplace Account Deletion), so
+// nothing of theirs may stay: their username, their feedback, and the seller
+// object in eBay's raw summary. The listing itself is about the item, not
+// the person, so it stays. Unlike every other query this one includes
+// soft-deleted rows, because a deleted row still holds the data.
+func (q *Queries) ForgetSeller(ctx context.Context, seller string) (int64, error) {
+	result, err := q.db.Exec(ctx, forgetSeller, seller)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getListing = `-- name: GetListing :one
 SELECT id, ebay_item_id, marketplace, title, url, image_url, seller, seller_feedback_pct, condition, buying_options, price_cents, shipping_cents, currency, ends_at, first_seen_at, last_seen_at, data, created_at, updated_at, deleted_at FROM listings
 WHERE id = $1 AND deleted_at IS NULL

@@ -247,6 +247,70 @@ paths:
         "422":
           $ref: "#/components/responses/Unprocessable"
 
+  /ebay/account-deletion:
+    get:
+      operationId: ebayDeletionChallenge
+      summary: Answer eBay's check that this notification endpoint is ours
+      description: |
+        eBay requires every app that stores its users' data to take
+        Marketplace Account Deletion notices. Registering this endpoint, eBay
+        sends a challenge_code, and the answer is the hex SHA-256 of
+        challenge_code, then EBAY_DELETION_TOKEN, then this endpoint's
+        public URL. Public, because eBay calls it with no credential.
+      security: []
+      parameters:
+        - name: challenge_code
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The answer eBay checks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeletionChallengeResponse"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+    post:
+      operationId: ebayAccountDeletion
+      summary: Forget an eBay user who closed their account
+      description: |
+        eBay posts one notice per closed account, signed with
+        X-EBAY-SIGNATURE (ECDSA over the body, with a key eBay's Notification
+        API serves by its kid). A notice that verifies scrubs that user, as a
+        seller, from every stored listing. Public, because eBay calls it with
+        no credential; the signature is what authenticates it.
+      security: []
+      parameters:
+        - name: X-EBAY-SIGNATURE
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountDeletionNotice"
+      responses:
+        "204":
+          description: Received; any data of that user is gone
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "412":
+          description: The signature does not verify, so the notice is ignored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          $ref: "#/components/responses/Upstream"
+
   /ebay/search:
     get:
       operationId: searchEbay
@@ -374,6 +438,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    NotConfigured:
+      description: The server is missing a setting this operation needs
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Unprocessable:
       description: The request parsed but a field is out of bounds
       content:
@@ -382,6 +452,18 @@ components:
             $ref: "#/components/schemas/Error"
 
   schemas:
+    DeletionChallengeResponse:
+      type: object
+      required: [challengeResponse]
+      properties:
+        challengeResponse:
+          type: string
+    AccountDeletionNotice:
+      description: |
+        eBay's notice, kept as the exact bytes it sent, because the signature
+        covers them: {"metadata":{"topic":"MARKETPLACE_ACCOUNT_DELETION",…},
+        "notification":{"data":{"username","userId","eiasToken"},…}}.
+      x-go-type: json.RawMessage
     Error:
       type: object
       required: [error]

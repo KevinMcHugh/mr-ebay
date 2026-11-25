@@ -4,6 +4,11 @@
 package ebaytest
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha1"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -40,14 +45,24 @@ type Server struct {
 
 	tokens   []string
 	searches []url.Values
+	key      *ecdsa.PrivateKey
+	keyCalls int
 }
+
+// KeyID is the id of the key the fake signs notifications with.
+const KeyID = "fake-key-1"
 
 // New starts a fake, closed when t ends.
 func New(t testing.TB) *Server {
-	s := &Server{ExpiresIn: 7200}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{ExpiresIn: 7200, key: key}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /identity/v1/oauth2/token", s.token)
 	mux.HandleFunc("GET /buy/browse/v1/item_summary/search", s.search)
+	mux.HandleFunc("GET /commerce/notification/v1/public_key/{kid}", s.publicKey)
 	s.Server = httptest.NewServer(mux)
 	t.Cleanup(s.Close)
 	return s
@@ -105,6 +120,51 @@ func (s *Server) Tokens() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.tokens)
+}
+
+// Sign returns the X-EBAY-SIGNATURE header eBay would send with body: base64
+// of a JSON object naming the key, with an ECDSA signature over the SHA-1
+// of the body.
+func (s *Server) Sign(body []byte) string {
+	sum := sha1.Sum(body)
+	sig, err := ecdsa.SignASN1(rand.Reader, s.key, sum[:])
+	if err != nil {
+		panic(err)
+	}
+	h, _ := json.Marshal(map[string]string{
+		"alg": "ecdsa", "kid": KeyID, "signature": base64.StdEncoding.EncodeToString(sig), "digest": "SHA1",
+	})
+	return base64.StdEncoding.EncodeToString(h)
+}
+
+// KeyCalls is how many times the public key was fetched.
+func (s *Server) KeyCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.keyCalls
+}
+
+// publicKey serves the signing key as eBay's Notification API does, PEM on
+// one line, to an application token.
+func (s *Server) publicKey(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	live := len(s.tokens) > 0 && r.Header.Get("Authorization") == "Bearer "+s.tokens[len(s.tokens)-1]
+	s.keyCalls++
+	s.mu.Unlock()
+	if !live {
+		writeJSON(w, http.StatusUnauthorized, ebayError(1001, "Invalid access token"))
+		return
+	}
+	if r.PathValue("kid") != KeyID {
+		writeJSON(w, http.StatusNotFound, ebayError(195000, "Invalid key id"))
+		return
+	}
+	der, err := x509.MarshalPKIXPublicKey(&s.key.PublicKey)
+	if err != nil {
+		panic(err)
+	}
+	pem := "-----BEGIN PUBLIC KEY-----" + base64.StdEncoding.EncodeToString(der) + "-----END PUBLIC KEY-----"
+	writeJSON(w, http.StatusOK, map[string]string{"algorithm": "ECDSA", "digest": "SHA1", "key": pem})
 }
 
 // Searches is the query of every search request, in order.

@@ -14,6 +14,7 @@ import (
 	"github.com/KevinMcHugh/mr-ebay/internal/app"
 	dbgen "github.com/KevinMcHugh/mr-ebay/internal/db/gen"
 	"github.com/KevinMcHugh/mr-ebay/internal/ebay"
+	"github.com/KevinMcHugh/mr-ebay/internal/server/deletion"
 	"github.com/KevinMcHugh/mr-ebay/internal/server/listings"
 	"github.com/KevinMcHugh/mr-ebay/internal/server/matches"
 	"github.com/KevinMcHugh/mr-ebay/internal/server/me"
@@ -37,13 +38,18 @@ type Store interface {
 // endpoints.
 type Server struct {
 	store Store
-	ebay  ebay.Searcher
+	ebay  ebay.API
 	links app.Links
+
+	// DeletionToken is the verification token for eBay's Marketplace
+	// Account Deletion endpoint (EBAY_DELETION_TOKEN). Empty, the endpoint
+	// answers eBay's challenge with a 503.
+	DeletionToken string
 }
 
 // New builds the API on store and the eBay client, with links for the URLs
 // in its responses.
-func New(store Store, eb ebay.Searcher, links app.Links) *Server {
+func New(store Store, eb ebay.API, links app.Links) *Server {
 	return &Server{store: store, ebay: eb, links: links}
 }
 
@@ -253,6 +259,38 @@ func (s *Server) ListRuns(ctx context.Context, req apigen.ListRunsRequestObject)
 	resp, err := RunPaged(ctx, runs.ListStore(s.store), runs.ListEndpoint{}, req)
 	if isUnprocessable(err) {
 		return apigen.ListRuns422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
+	}
+	return resp, err
+}
+
+// -----------------------------------------------------------------------------
+// eBay: Marketplace Account Deletion
+// -----------------------------------------------------------------------------
+
+// DeletionURL is the account deletion endpoint's public URL, which eBay's
+// developer portal must be given exactly, since the challenge hashes it.
+func (s *Server) DeletionURL() string { return s.links.Base + BaseURL + deletion.Path }
+
+func (s *Server) EbayDeletionChallenge(ctx context.Context, req apigen.EbayDeletionChallengeRequestObject) (apigen.EbayDeletionChallengeResponseObject, error) {
+	resp, err := Run(ctx, deletion.ChallengeStore{}, deletion.ChallengeEndpoint{Token: s.DeletionToken, URL: s.DeletionURL()}, req)
+	switch {
+	case errors.Is(err, deletion.ErrNotConfigured):
+		return apigen.EbayDeletionChallenge503JSONResponse{NotConfiguredJSONResponse: apigen.NotConfiguredJSONResponse{Error: err.Error()}}, nil
+	case isUnprocessable(err):
+		return apigen.EbayDeletionChallenge422JSONResponse{UnprocessableJSONResponse: unprocessable(err)}, nil
+	}
+	return resp, err
+}
+
+func (s *Server) EbayAccountDeletion(ctx context.Context, req apigen.EbayAccountDeletionRequestObject) (apigen.EbayAccountDeletionResponseObject, error) {
+	resp, err := Run(ctx, deletion.Deps(s.store, s.ebay), deletion.NotifyEndpoint{}, req)
+	switch {
+	case errors.Is(err, deletion.ErrBadSignature):
+		return apigen.EbayAccountDeletion412JSONResponse{Error: err.Error()}, nil
+	case isUnprocessable(err):
+		return apigen.EbayAccountDeletion400JSONResponse{BadRequestJSONResponse: apigen.BadRequestJSONResponse{Error: err.Error()}}, nil
+	case isUpstream(err):
+		return apigen.EbayAccountDeletion502JSONResponse{UpstreamJSONResponse: upstream(err)}, nil
 	}
 	return resp, err
 }

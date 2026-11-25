@@ -55,6 +55,19 @@ type Searcher interface {
 	Search(ctx context.Context, q Query) (Result, error)
 }
 
+// KeyFetcher fetches the public key eBay signs its notifications with, by
+// the key id a notification names.
+type KeyFetcher interface {
+	PublicKey(ctx context.Context, kid string) (string, error)
+}
+
+// API is everything the app asks of eBay. *Client implements it; each
+// endpoint narrows it to the part it calls.
+type API interface {
+	Searcher
+	KeyFetcher
+}
+
 // Query is one search, in the app's terms. Prices are cents of Currency,
 // and 0 means no limit; an empty set means any.
 type Query struct {
@@ -152,7 +165,19 @@ type Client struct {
 	mu      sync.Mutex
 	token   string
 	expires time.Time
+
+	keysMu sync.Mutex
+	keys   map[string]cachedKey
 }
+
+type cachedKey struct {
+	pem     string
+	expires time.Time
+}
+
+// keyTTL is how long a notification key is cached. eBay's guidance is to
+// cache them rather than fetch one per notification, and it sends many.
+const keyTTL = time.Hour
 
 // New builds a Client on cfg.
 func New(cfg Config) *Client {
@@ -340,6 +365,62 @@ func (c *Client) accessToken(ctx context.Context) (string, error) {
 	life := time.Duration(tok.ExpiresIn)*time.Second - 5*time.Minute
 	c.token, c.expires = tok.AccessToken, c.now().Add(max(life, 0))
 	return c.token, nil
+}
+
+// PublicKey returns the PEM public key eBay's Notification API serves for
+// kid, from a cache of an hour. eBay may send it as one line, without the
+// line breaks PEM usually has.
+func (c *Client) PublicKey(ctx context.Context, kid string) (string, error) {
+	if !c.configured() {
+		return "", ErrNotConfigured
+	}
+	if kid == "" || strings.ContainsAny(kid, "/?#") {
+		return "", fmt.Errorf("eBay public key: bad key id %q", kid)
+	}
+	c.keysMu.Lock()
+	k, ok := c.keys[kid]
+	c.keysMu.Unlock()
+	if ok && c.now().Before(k.expires) {
+		return k.pem, nil
+	}
+	endpoint := c.cfg.BaseURL + "/commerce/notification/v1/public_key/" + url.PathEscape(kid)
+	for attempt := 0; ; attempt++ {
+		token, err := c.accessToken(ctx)
+		if err != nil {
+			return "", err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/json")
+		resp, err := c.cfg.HTTP.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("eBay public key: %w", err)
+		}
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+			c.dropToken(token)
+			continue
+		}
+		var body struct {
+			Key string `json:"key"`
+		}
+		if err := decode(resp, &body); err != nil {
+			return "", err
+		}
+		if body.Key == "" {
+			return "", errors.New("eBay public key: response had no key")
+		}
+		c.keysMu.Lock()
+		if c.keys == nil {
+			c.keys = map[string]cachedKey{}
+		}
+		c.keys[kid] = cachedKey{pem: body.Key, expires: c.now().Add(keyTTL)}
+		c.keysMu.Unlock()
+		return body.Key, nil
+	}
 }
 
 // dropToken forgets token, unless another request already replaced it.
